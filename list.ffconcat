@@ -1,0 +1,7 @@
+ffconcat version 1.0
+file ''
+inpoint 12.000000
+outpoint 60.000000
+file ''
+inpoint 117.700000
+outpoint 150.000000

@@ -1,0 +1,5 @@
+build/
+*.app
+.DS_Store
+# notes de session personnelles
+PASSATION_*.md
