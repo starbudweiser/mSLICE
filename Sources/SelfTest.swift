@@ -211,6 +211,22 @@ enum UITest {
                     if shots == "1" { delegate.snapshot(to: "build/ui-resize-\(Int(size.width)).png") }
                 } else { check(false, "timeline introuvable") }
             }
+            // bouton de la molette enfoncé + glissement : la timeline zoomée suit la souris (vue qui recule quand on glisse vers la droite)
+            if let t = timelineView() {
+                func ev(_ type: CGEventType, _ x: CGFloat) -> NSEvent? { CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: CGPoint(x: x, y: 400), mouseButton: .center).flatMap { NSEvent(cgEvent: $0) } }
+                let (oldSpan, oldStart) = (d.viewSpan, d.viewStart)
+                d.viewSpan = d.duration / 20; d.viewStart = d.duration / 2; d.clampView()
+                let s0 = d.viewStart
+                if let down = ev(.otherMouseDown, 500), let drag = ev(.otherMouseDragged, 500 + t.bounds.width / 4), let up = ev(.otherMouseUp, 500 + t.bounds.width / 4) {
+                    t.otherMouseDown(with: down); t.otherMouseDragged(with: drag)
+                    check(abs((s0 - d.viewStart) - d.viewSpan / 4) < 0.01, "bouton molette + glissement vers la droite : vue reculée de \(String(format: "%.2f", s0 - d.viewStart)) s (attendu \(String(format: "%.2f", d.viewSpan / 4)))")
+                    t.otherMouseUp(with: up)
+                    let s1 = d.viewStart
+                    t.otherMouseDragged(with: drag)
+                    check(d.viewStart == s1, "bouton relâché : la vue ne bouge plus")
+                } else { check(false, "événements souris synthétiques") }
+                d.viewSpan = oldSpan; d.viewStart = oldStart; d.clampView()
+            }
             w.setFrame(NSRect(origin: .zero, size: NSSize(width: 1200, height: 800)), display: true)
         }
 

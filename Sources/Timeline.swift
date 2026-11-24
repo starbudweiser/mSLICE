@@ -283,6 +283,27 @@ final class TimelineView: NSView {
         }
     }
 
+    // Bouton de la molette (clic du milieu) maintenu enfoncé : on « attrape » la timeline zoomée et on la glisse à gauche ou à droite.
+    private var panning: (x: CGFloat, start: Double)?
+
+    override func otherMouseDown(with e: NSEvent) {
+        guard e.buttonNumber == 2, let d = doc else { super.otherMouseDown(with: e); return }
+        panning = (convert(e.locationInWindow, from: nil).x, d.viewStart)
+        NSCursor.closedHand.push()
+    }
+
+    override func otherMouseDragged(with e: NSEvent) {
+        guard let d = doc, let p = panning else { super.otherMouseDragged(with: e); return }
+        let dx = convert(e.locationInWindow, from: nil).x - p.x
+        d.viewStart = p.start - Double(dx) * d.viewSpan / Double(max(bounds.width, 1)); d.clampView()
+    }
+
+    override func otherMouseUp(with e: NSEvent) {
+        guard panning != nil else { super.otherMouseUp(with: e); return }
+        panning = nil
+        NSCursor.pop()
+    }
+
     override func magnify(with e: NSEvent) {
         guard let d = doc else { return }
         d.zoom(by: 1 + Double(e.magnification), around: time(convert(e.locationInWindow, from: nil).x))

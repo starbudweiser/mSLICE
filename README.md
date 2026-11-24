@@ -9,7 +9,7 @@
 mSLICE sert à **élaguer** des fichiers audio et vidéo : retirer les 10 ou 20 premières secondes où il ne se passe rien, la fin enregistrée « par sécurité », ou extraire plusieurs morceaux d'une longue séquence.
 
 - **Bistouri aux touches I / O** : `I` pose l'entrée, `O` la sortie et crée le morceau ; plusieurs morceaux par fichier ; poignées à glisser sur la timeline.
-- **Timeline précise et réactive** : règle avec images clés, vignettes, forme d'onde, zoom (⌘ + molette, pincement), lecture J K L, image par image (← →), image clé par image clé (↑ ↓).
+- **Timeline précise et réactive** : règle avec images clés, vignettes, forme d'onde, zoom (⌘ + molette, pincement), déplacement de la vue zoomée (molette, ou bouton de la molette enfoncé et glissé), lecture J K L, image par image (← →), image clé par image clé (↑ ↓).
 - **Sans recompression** (copie directe des flux) : instantané, aucune perte. En copie directe, une vidéo ne peut démarrer que sur une image clé : l'entrée se cale sur l'image clé précédente et l'interface l'indique.
 - **Export** : un fichier par morceau (`nom_01`, `nom_02`… la numérotation continue, rien n'est jamais écrasé) ou un seul fichier fusionné.
 - **Formats** : tout ce que ffprobe sait lire en entrée (MOV, MP4, MKV, AVI, WebM, MXF, MTS, WAV, AIFF, MP3, AAC, FLAC, OGG, Opus…). En sortie : MP4, MOV, MKV, WebM, MP3, M4A, WAV, FLAC, AIFF, Opus, ou le conteneur d'origine.
