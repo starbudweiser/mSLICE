@@ -192,7 +192,7 @@ struct PlayerCard: View {
     var body: some View {
         ZStack {
             Theme.media
-            if doc.hasVideo { PlayerSurface(player: player.player) } else {
+            if doc.hasVideo { PlayerSurface(player: player.player, overlay: player.scrubber.layer) } else {
                 VStack(spacing: 8) { Image(systemName: "waveform").font(.system(size: 40, weight: .light)); Text(doc.name).font(.system(size: 13)) }.foregroundStyle(.white.opacity(0.7))
             }
             if let p = player.preparing { Text(p).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 28).background(.black.opacity(0.6), in: Capsule()) }

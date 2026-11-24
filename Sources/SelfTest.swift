@@ -1,5 +1,7 @@
 // mSLICE — essais sans fenêtre : `mSLICE --selftest <fichier>` sonde, coupe, fusionne, recompresse, puis vérifie les durées avec ffprobe.
 import AppKit
+import AVFoundation
+import CoreMedia
 import Foundation
 
 @MainActor
@@ -228,6 +230,93 @@ enum UITest {
                 d.viewSpan = oldSpan; d.viewStart = oldStart; d.clampView()
             }
             w.setFrame(NSRect(origin: .zero, size: NSSize(width: 1200, height: 800)), display: true)
+        }
+
+        // défilement instantané : latence, régularité et exactitude des images affichées pendant le glissement
+        do {
+            let sc = model.player.scrubber
+            for _ in 0 ..< 50 { if sc.ready { break }; await wait(0.1) }
+            check(sc.ready, "décodeur de défilement prêt")
+            if sc.ready {
+                let fd = model.player.frameDuration
+                func now() -> Double { Date().timeIntervalSinceReferenceDate * 1000 }
+                func median(_ a: [Double]) -> Double { a.sorted()[a.count / 2] }
+                func f0(_ x: Double) -> String { String(format: "%.0f", x) }
+                func jump(_ t: Double) async -> (first: Double, exact: Double, pts: Double)? {
+                    let n0 = sc.presentCount, t0 = now(); var first = -1.0
+                    sc.show(t)
+                    let tc = min(max(t, 0), d.duration)
+                    while now() - t0 < 6000 {
+                        if first < 0, sc.presentCount > n0 { first = now() - t0 }
+                        if sc.presentCount > n0, let e = sc.lastExact, abs(e.target - tc) < 1e-9 { return (first < 0 ? now() - t0 : first, now() - t0, e.pts) }
+                        try? await Task.sleep(nanoseconds: 300_000)
+                    }
+                    return nil
+                }
+                let targets: [Double] = [37.1, 410.6, 733.2, 1000.5, 660.9, 1320.4, 85.7, 1650.0, 1326.5, 522.3, 14.2, 1221.9]
+                // référence : AVPlayer avec saut vers l'image clé voisine (l'ancienne méthode)
+                var base: [Double] = []
+                for t in targets {
+                    let t0 = now()
+                    await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                        model.player.player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity) { _ in c.resume() }
+                    }
+                    base.append(now() - t0)
+                }
+                check(true, "référence AVPlayer (saut tolérant) : médiane \(f0(median(base))) ms, max \(f0(base.max() ?? 0)) ms par déplacement")
+                // sauts à froid (groupe d'images pas encore décodé)
+                var firsts: [Double] = [], exacts: [Double] = [], bad = 0, lost = 0
+                for t in targets {
+                    guard let r = await jump(t) else { lost += 1; continue }
+                    firsts.append(r.first); exacts.append(r.exact)
+                    if !(r.pts <= t + 1e-3 && t - r.pts < fd * 1.6) { bad += 1; print("        image hors cible : demandé \(t), obtenu \(r.pts)") }
+                }
+                check(lost == 0 && !firsts.isEmpty, "sauts à froid : \(targets.count - lost)/\(targets.count) réponses")
+                if !firsts.isEmpty {
+                    check(median(firsts) < 60, "sauts à froid : 1re image (clé) en \(f0(median(firsts))) ms (médiane), \(f0(firsts.max() ?? 0)) ms (max)")
+                    check(true, "sauts à froid : image exacte en \(f0(median(exacts))) ms (médiane), \(f0(exacts.max() ?? 0)) ms (max)")
+                }
+                check(bad == 0, "images exactes à la bonne position (\(bad) hors cible)")
+                // retour vers un groupe déjà décodé : depuis la mémoire
+                _ = await jump(1000.5); _ = await jump(400.2)
+                if let r = await jump(1000.5) { check(r.exact < 15, "retour dans un groupe déjà décodé : \(f0(r.exact)) ms") } else { check(false, "retour dans un groupe déjà décodé") }
+                if let r = await jump(1000.5 + fd) { check(r.exact < 15, "image suivante dans un groupe décodé : \(f0(r.exact)) ms") } else { check(false, "image suivante") }
+                // glissement : 400 mouvements à 60 Hz, 15 s de vidéo par seconde
+                var t = 100.0, last = sc.presentCount, run = 0, maxRun = 0
+                let n0 = sc.presentCount, d0 = now()
+                for _ in 0 ..< 400 {
+                    t += 0.25; sc.show(t)
+                    try? await Task.sleep(nanoseconds: 16_000_000)
+                    let c = sc.presentCount
+                    if c == last { run += 1; maxRun = max(maxRun, run) } else { run = 0 }
+                    last = c
+                }
+                let shown = sc.presentCount - n0
+                check(maxRun <= 6, "glissement rapide : \(shown) images affichées en \(f0(now() - d0)) ms, plus longue pause \(maxRun * 16) ms")
+                if let r = await jump(t) { check(r.pts <= t + 1e-3 && t - r.pts < fd * 1.6, "glissement : image exacte \(f0(r.exact)) ms après l'arrêt") } else { check(false, "glissement : image exacte") }
+                // même image que le décodeur d'Apple (contenu, couleurs, orientation)
+                if let url = d.info.url as URL? {
+                    let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+                    gen.requestedTimeToleranceBefore = .zero; gen.requestedTimeToleranceAfter = .zero
+                    gen.maximumSize = CGSize(width: 1280, height: 720); gen.appliesPreferredTrackTransform = true
+                    func tiny(_ img: CGImage) -> [UInt8] {
+                        var px = [UInt8](repeating: 0, count: 48 * 27 * 4)
+                        let ctx = CGContext(data: &px, width: 48, height: 27, bitsPerComponent: 8, bytesPerRow: 48 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                        ctx.interpolationQuality = .medium; ctx.draw(img, in: CGRect(x: 0, y: 0, width: 48, height: 27)); return px
+                    }
+                    for tt in [37.1, 733.2, 1650.0] {
+                        guard let r = await jump(tt), let pb = sc.lastPixelBuffer, let mine = Scrubber.cgImage(pb),
+                              let ref = try? await gen.image(at: CMTime(seconds: r.pts, preferredTimescale: 6000)).image else { check(false, "comparaison d'image à \(tt) s"); continue }
+                        let a = tiny(mine), b = tiny(ref)
+                        var sum = 0.0
+                        for i in 0 ..< min(a.count, b.count) { sum += abs(Double(a[i]) - Double(b[i])) }
+                        let diff = sum / Double(a.count)
+                        check(diff < 6, "image à \(Fmt.time(r.pts)) identique à celle d'Apple (écart moyen \(String(format: "%.1f", diff))/255)")
+                    }
+                }
+                check(sc.mismatches == 0, "images clés : début de groupe cohérent (\(sc.mismatches) écart) ; mémoire : \(sc.cacheSummary)")
+                sc.hide()
+            }
         }
 
         // positionnement précis

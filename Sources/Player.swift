@@ -11,6 +11,9 @@ final class PlayerModel: ObservableObject {
     @Published var rate: Float = 0
     @Published var preparing: String?        // « Préparation de l'aperçu… »
     let player = AVPlayer()
+    /// Défilement instantané (voir Scrub.swift) : prend en charge l'affichage pendant qu'on déplace la tête de lecture.
+    let scrubber = Scrubber()
+    private var scrubEpoch = 0
     private(set) var duration: Double = 0
     private(set) var frameDuration: Double = 0.04
     private var observer: Any?
@@ -43,10 +46,12 @@ final class PlayerModel: ObservableObject {
         time = 0
         preparing = nil
         player.replaceCurrentItem(with: nil)
+        scrubber.hide()
         let url = await playableURL(info)
         guard token == loadToken else { return }
         preparing = nil
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        await scrubber.prepare(url: url, hasVideo: !info.isAudioOnly)
     }
 
     private func isPlayable(_ url: URL, needsVideo: Bool) async -> Bool {
@@ -98,15 +103,30 @@ final class PlayerModel: ObservableObject {
     // MARK: Commandes
 
     /// Se place sur un instant, à l'image près ; les demandes rapprochées (glissement) sont regroupées.
-    /// `precise: false` (glissement sur la timeline) : l'aperçu se contente de l'image clé voisine, donc s'affiche tout de suite.
+    /// À l'arrêt, le décodeur de défilement affiche l'image tout de suite (exacte, depuis sa mémoire) ; AVPlayer rejoint ensuite la position
+    /// exacte et la couche du décodeur s'efface. `precise: false` (glissement sur la timeline) : AVPlayer n'est pas sollicité du tout.
     func seek(_ t: Double, precise: Bool = true) {
         let c = min(max(t, 0), duration)
-        time = c; pending = (c, precise || (pending?.1 ?? false))
+        time = c
+        if scrubber.ready, !isPlaying {
+            scrubEpoch += 1
+            scrubber.show(c)
+            if !precise { return }
+        }
+        pending = (c, precise || (pending?.1 ?? false))
         if !chasing { chase() }
     }
 
     private func chase() {
-        guard let (t, precise) = pending else { chasing = false; return }
+        guard let (t, precise) = pending else {
+            chasing = false
+            // AVPlayer a rejoint la position : on retire la couche du décodeur, sauf si un nouveau défilement a commencé entre-temps.
+            let e = scrubEpoch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+                MainActor.assumeIsolated { if let self, self.scrubEpoch == e, !self.chasing { self.scrubber.hide() } }
+            }
+            return
+        }
         chasing = true; pending = nil
         let tol: CMTime = precise ? .zero : .positiveInfinity
         player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: tol, toleranceAfter: tol) { [weak self] _ in
@@ -116,6 +136,7 @@ final class PlayerModel: ObservableObject {
 
     func play(rate r: Float = 1) {
         if r > 0, time >= duration - 0.01 { seek(0) }
+        scrubEpoch += 1; scrubber.hide()
         player.rate = r; rate = r; isPlaying = r != 0
     }
     func pause() { player.pause(); rate = 0; isPlaying = false; time = player.currentTime().seconds.isFinite ? min(max(player.currentTime().seconds, 0), duration) : time }
@@ -137,12 +158,34 @@ final class PlayerModel: ObservableObject {
 }
 
 /// Surface vidéo (AVPlayerLayer) sur fond noir.
+/// Contient la vidéo du lecteur et, par-dessus, la couche du décodeur de défilement.
+final class PlayerHostView: NSView {
+    let video = AVPlayerLayer()
+    var overlay: CALayer? { didSet { oldValue?.removeFromSuperlayer(); if let o = overlay { layer?.addSublayer(o); needsLayout = true } } }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer = CALayer(); layer?.backgroundColor = NSColor.black.cgColor
+        video.videoGravity = .resizeAspect; video.backgroundColor = NSColor.black.cgColor
+        layer?.addSublayer(video)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        video.frame = bounds; overlay?.frame = bounds
+        CATransaction.commit()
+    }
+}
+
 struct PlayerSurface: NSViewRepresentable {
     let player: AVPlayer
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView(); v.wantsLayer = true
-        let l = AVPlayerLayer(player: player); l.videoGravity = .resizeAspect; l.backgroundColor = NSColor.black.cgColor
-        v.layer = l; return v
+    let overlay: CALayer
+    func makeNSView(context: Context) -> PlayerHostView {
+        let v = PlayerHostView(); v.video.player = player; v.overlay = overlay; return v
     }
-    func updateNSView(_ v: NSView, context: Context) { (v.layer as? AVPlayerLayer)?.player = player }
+    func updateNSView(_ v: PlayerHostView, context: Context) {
+        if v.video.player !== player { v.video.player = player }
+        if v.overlay !== overlay { v.overlay = overlay }
+    }
 }
