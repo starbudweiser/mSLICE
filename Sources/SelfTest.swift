@@ -275,6 +275,23 @@ enum UITest {
         check(delegate.batchWindow != nil, "mslice://trim : fenêtre d'élagage en lot ouverte")
         delegate.batchWindow?.close()
 
+        // mémoire de la taille de la fenêtre : enregistrée à la fermeture, bornée à l'ouverture, position non mémorisée (centrée)
+        if let w = delegate.window {
+            UserDefaults.standard.removeObject(forKey: WindowMemory.key)
+            w.setFrame(NSRect(origin: .zero, size: NSSize(width: 1337, height: 777)), display: true)
+            delegate.saveWindowSize()
+            check(WindowMemory.load() == NSSize(width: 1337, height: 777), "taille mémorisée : \(WindowMemory.load().map { "\(Int($0.width))×\(Int($0.height))" } ?? "aucune")")
+            let screen = NSRect(x: 0, y: 0, width: 1512, height: 900)
+            check(WindowMemory.fitted(NSSize(width: 1337, height: 777), in: screen) == NSSize(width: 1337, height: 777), "taille retrouvée à l'ouverture")
+            check(WindowMemory.fitted(nil, in: screen) == WindowMemory.defaultSize, "sans mémoire : taille par défaut")
+            check(WindowMemory.fitted(NSSize(width: 5000, height: 4000), in: screen) == NSSize(width: 1512, height: 900), "trop grande : ramenée à l'écran")
+            check(WindowMemory.fitted(NSSize(width: 300, height: 200), in: screen) == WindowMemory.minSize, "trop petite : ramenée au minimum")
+            delegate.centerHigh(w)
+            if let v = (w.screen ?? NSScreen.main)?.visibleFrame { check(abs(w.frame.midX - v.midX) < 1.5, "position : fenêtre centrée à l'ouverture (écart \(String(format: "%.1f", w.frame.midX - v.midX)) pt)") }
+            UserDefaults.standard.removeObject(forKey: WindowMemory.key)
+            w.setFrame(NSRect(origin: .zero, size: NSSize(width: 1200, height: 800)), display: true)
+        }
+
         // fenêtre des réglages : ouverture sans plantage, avec la vue réellement affichée un moment
         delegate.openSettings()
         await wait(1.5)

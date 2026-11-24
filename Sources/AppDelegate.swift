@@ -2,6 +2,25 @@
 import AppKit
 import SwiftUI
 
+/// Taille de la fenêtre principale mémorisée à la fermeture ; la position, elle, n'est pas mémorisée : la fenêtre s'ouvre toujours centrée.
+enum WindowMemory {
+    static let key = "window.size"
+    static let defaultSize = NSSize(width: 1200, height: 800)
+    static let minSize = NSSize(width: 1180, height: 720)
+    static func load() -> NSSize? {
+        guard let s = UserDefaults.standard.string(forKey: key) else { return nil }
+        let p = s.split(separator: "x").compactMap { Double($0) }
+        return p.count == 2 ? NSSize(width: p[0], height: p[1]) : nil
+    }
+    static func save(_ size: NSSize) { UserDefaults.standard.set("\(Int(size.width.rounded()))x\(Int(size.height.rounded()))", forKey: key) }
+    /// Taille à l'ouverture : celle mémorisée (ou celle par défaut), jamais sous le minimum ni plus grande que l'écran.
+    static func fitted(_ saved: NSSize?, in visible: NSRect) -> NSSize {
+        let s = saved ?? defaultSize
+        return NSSize(width: min(max(s.width, minSize.width), max(visible.width, minSize.width)),
+                      height: min(max(s.height, minSize.height), max(visible.height, minSize.height)))
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
@@ -54,6 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !queued.isEmpty { handle(queued); queued = [] }
     }
 
+    /// Mémorise la taille (pas en plein écran ni en zoom, qui n'ont pas de taille « choisie »).
+    func saveWindowSize() {
+        guard let w = window, !w.styleMask.contains(.fullScreen), !w.isZoomed else { return }
+        WindowMemory.save(w.frame.size)
+    }
+    func applicationWillTerminate(_ n: Notification) { saveWindowSize() }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ app: NSApplication, hasVisibleWindows flag: Bool) -> Bool { if !flag { openMainWindow(show: true) }; return true }
 
@@ -80,15 +106,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func openMainWindow(show: Bool) {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+            let size = WindowMemory.fitted(WindowMemory.load(), in: NSScreen.main?.visibleFrame ?? NSRect(origin: .zero, size: WindowMemory.defaultSize))
+            let w = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
-            w.minSize = NSSize(width: 1180, height: 720)
+            w.minSize = WindowMemory.minSize
             w.backgroundColor = Theme.bgNS
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: MainView(model: AppModel.shared).ignoresSafeArea())
-            w.setFrameAutosaveName("")
-            centerHigh(w)
+            w.setFrame(NSRect(origin: .zero, size: size), display: false)      // taille mémorisée…
+            centerHigh(w)                                                      // …position toujours centrée
             window = w; AppModel.shared.mainWindow = w
+            for n in [NSWindow.didEndLiveResizeNotification, NSWindow.willCloseNotification] {
+                NotificationCenter.default.addObserver(forName: n, object: w, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.saveWindowSize() } }
+            }
             for n in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didExitFullScreenNotification, NSWindow.didEnterFullScreenNotification] {
                 NotificationCenter.default.addObserver(forName: n, object: w, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.layoutTrafficLights() } }
             }
