@@ -33,6 +33,11 @@ mSLICE sert à **élaguer** des fichiers audio et vidéo : retirer les 10 ou 20 
 | `⌫`, `⌘Z` | supprimer le morceau, annuler |
 | `⌘↩` | extraire |
 
+## Documentation (PDF, FR | EN)
+
+Trois documents en double page bilingue (français à gauche, anglais à droite), avec captures de l'appli et schémas : [Conception](docs/pdf/mSLICE-conception-FR-EN.pdf) (principes, architecture, analyse, personnages, sécurité, mesures), [Interface](docs/pdf/mSLICE-interface-FR-EN.pdf) (design Flat Mat, fenêtre, onglets, états) et [Documentation](docs/pdf/mSLICE-documentation-FR-EN.pdf) (guide d'utilisation). Three bilingual spread documents (French left, English right) with app captures and diagrams: Design, Interface and the user guide.
+Pour les régénérer : `cd docs/pdf-src && python3 conception.py && python3 interface.py && python3 documentation.py` (Brave ou tout Chromium ; les captures viennent d'un film de démonstration généré, jamais d'un extrait protégé, et `docs/demo-src/` n'est pas dans le dépôt).
+
 ## Installation
 
 Téléchargez le `.zip` de la dernière [release](https://github.com/starbudweiser/mSLICE/releases/latest), décompressez-le et glissez **mSLICE.app** dans vos Applications. L'appli est signée et notarisée par Apple ; elle exige un Mac Apple Silicon sous macOS 14 ou plus récent, et se met à jour toute seule. Au premier lancement, elle active l'extension du clic droit (Réglages Système ▸ Extensions ▸ Finder si macOS le demande).

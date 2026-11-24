@@ -389,7 +389,7 @@ private struct SelectionView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 SectionTitle(L.t("find.selection"))
                 Spacer(minLength: 4)
-                Text(L.t("find.selection.count", find.keptCount, find.result.passages.count)).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1)
+                Text(find.keptCount == 1 ? L.t("find.selection.count1", find.result.passages.count) : L.t("find.selection.count", find.keptCount, find.result.passages.count)).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1)
             }
             FlowLayout(spacing: 6) {
                 ForEach(Array(find.ordered.enumerated()), id: \.element.token) { n, t in

@@ -198,6 +198,7 @@ final class FindModel: ObservableObject {
 
     func add(_ t: FindTerm) {
         var t = t
+        if t.kind == .person, t.label == nil, let id = Int32(t.key) { t.label = faces?.names[id] }       // le nom donné suit le critère
         if let i = terms.firstIndex(where: { $0.token == t.token }) { terms[i].exclude = t.exclude; return }
         if terms.isEmpty { t.exclude = false }
         terms.append(t)

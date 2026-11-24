@@ -288,8 +288,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
             v.frame = NSRect(origin: .zero, size: w.frame.size)
             v.layoutSubtreeIfNeeded()
-            guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { exit(3) }
-            v.cacheDisplay(in: v.bounds, to: rep)
+            // `--scale 2` : capture en haute définition (pour les documents imprimés)
+            let sc = max(1, min(Double(self.arg("--scale") ?? "") ?? 1, 3))
+            guard sc > 1, let big = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(v.bounds.width * sc), pixelsHigh: Int(v.bounds.height * sc), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else {
+                guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { exit(3) }
+                v.cacheDisplay(in: v.bounds, to: rep)
+                if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)); print("OK : \(path) (\(Int(v.bounds.width))×\(Int(v.bounds.height)))") }
+                self.restoreAfterCapture?()
+                exit(0)
+            }
+            big.size = v.bounds.size
+            v.cacheDisplay(in: v.bounds, to: big)
+            let rep = big
             if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)); print("OK : \(path) (\(Int(v.bounds.width))×\(Int(v.bounds.height)))") }
             self.restoreAfterCapture?()
             exit(0)

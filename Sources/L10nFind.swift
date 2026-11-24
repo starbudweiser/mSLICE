@@ -64,6 +64,7 @@ extension L {
         "find.chars.stat": ["%d · %@", "%d · %@", "%d · %@", "%d · %@"],
         "find.selection": ["Sélection", "Selection", "Selección", "Selezione"],
         "find.selection.count": ["%d passages retenus sur %d", "%d of %d passages kept", "%d de %d pasajes retenidos", "%d passaggi su %d trattenuti"],
+        "find.selection.count1": ["1 passage retenu sur %d", "1 of %d passages kept", "1 de %d pasajes retenidos", "1 passaggio su %d trattenuto"],
         "find.and": ["ET", "AND", "Y", "E"],
         "find.except": ["SAUF", "EXCEPT", "SALVO", "TRANNE"],
         "find.flip.help": ["Basculer entre ET et SAUF", "Switch between AND and EXCEPT", "Alternar entre Y y SALVO", "Passa da E a TRANNE"],
