@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>mSLICE — Maquette de l'onglet Trouver (Flat Mat)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.4 -apple-system,"SF Pro Text",system-ui,sans-serif;background:#0b0b0d;color:#eee;-webkit-font-smoothing:antialiased}
+.top{padding:18px 28px 6px;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.top h1{font-size:20px;font-weight:700}.top .sub0{color:#999}
+.tabs{display:flex;gap:6px;padding:10px 28px;flex-wrap:wrap;align-items:center}
+.tabs button{background:#222;color:#eee;border:0;padding:8px 16px;border-radius:999px;font:inherit;font-weight:500;cursor:pointer}
+.tabs button.on{background:#ffd21e;color:#222}
+.tabs .sep{width:18px}
+.legend{color:#aaa;padding:0 28px 12px;max-width:1200px;line-height:1.5}
+.legend b{color:#fff}
+.stage{padding:6px 28px 40px}
+
+/* ---------- jetons Flat Mat (identiques à l'appli, Theme.swift) ---------- */
+.win{--rw:12px;--rb:12px;--rc:8px;--rch:999px;--ph:#ff453a;--sand:#e8a257}
+.win[data-th=sombre]{--bg:#131316;--card:#1c1c1f;--ctl:#2c2c31;--t:#f5f5f7;--t2:#98989f;--acc:#0a84ff;--onacc:#fff;--m:#f08a52;--seg:#f08a52;--ok:#30d158;--warn:#ff9f0a;--line:#303035;--dim:rgba(28,28,31,.68);--sh:0 18px 50px rgba(0,0,0,.5)}
+.win[data-th=clair]{--bg:#f4f1ec;--card:#fff;--ctl:#ebe6de;--t:#26231e;--t2:#7b756a;--acc:#26231e;--onacc:#f4f1ec;--m:#d9622b;--seg:#d9622b;--ok:#3f8f5a;--warn:#b7791f;--line:#e3ddd2;--dim:rgba(255,255,255,.68);--sh:0 18px 50px rgba(60,40,10,.18)}
+
+/* ---------- fenêtre ---------- */
+.win{width:1200px;height:800px;display:grid;grid-template-columns:232px 1fr 304px;grid-template-rows:auto 1fr;overflow:hidden;position:relative;
+ background:var(--bg);color:var(--t);border-radius:var(--rw);box-shadow:var(--sh);font-size:12.5px}
+.bar{grid-column:1/4;display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:7px}.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.brand{font-weight:700;font-size:15px;margin-left:8px}.brand b{color:var(--m)}
+.finfo{margin-left:14px;color:var(--t2);font-size:12px;white-space:nowrap}.finfo b{color:var(--t);font-weight:600}
+.bar .r{margin-left:auto;display:flex;gap:8px}
+.btn{background:var(--ctl);color:var(--t);border:0;height:30px;padding:0 12px;border-radius:var(--rc);font:inherit;font-weight:500;white-space:nowrap;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.btn.pri{background:var(--acc);color:var(--onacc);font-weight:600}
+.btn.wide{width:100%}
+.btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.h{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--t2)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--rb);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.hh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.sub{color:var(--t2);font-size:11.5px}
+.tag{font-size:10.5px;font-weight:600;padding:0 8px;height:18px;line-height:18px;border-radius:var(--rch);background:var(--ctl);color:var(--t2);white-space:nowrap;display:inline-block}
+.tag.ok{background:color-mix(in srgb,var(--ok) 22%,transparent);color:var(--ok)}
+.tag.ver{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--t2)}
+kbd{font:600 11px ui-monospace,Menlo,monospace;background:var(--ctl);border:1px solid color-mix(in srgb,var(--t) 16%,transparent);border-radius:5px;padding:1px 6px;color:var(--t);min-width:20px;text-align:center;display:inline-block}
+.sw{width:34px;height:20px;border-radius:99px;background:var(--ctl);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.sw.on{background:var(--acc)}.sw.on::after{left:16px}
+.seg3{display:flex;background:var(--ctl);border-radius:var(--rch);padding:3px;gap:2px;flex:none}
+.seg3 span{flex:1;min-width:0;text-align:center;height:26px;line-height:26px;border-radius:var(--rch);color:var(--t2);font-weight:600;font-size:12px;white-space:nowrap}
+.seg3 span.on{background:var(--acc);color:var(--onacc)}
+
+/* ---------- gauche ---------- */
+.side{padding:14px 12px;display:flex;flex-direction:column;gap:6px;border-right:1px solid var(--line);overflow:hidden}
+.side .h{padding:0 4px 4px}
+.file{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:8px;border-radius:var(--rc);min-width:0}
+.file.on{background:var(--ctl)}
+.fi{width:34px;height:34px;border-radius:var(--rc);display:grid;place-items:center;font-weight:700;font-size:9.5px;background:var(--ctl);color:var(--t)}
+.file.on .fi{background:var(--card)}
+.fn{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs{color:var(--t2);font-size:11.5px;white-space:nowrap;margin-top:2px}
+.drop{margin-top:auto;border:1.5px dashed color-mix(in srgb,var(--t) 28%,transparent);border-radius:var(--rb);padding:14px 12px;text-align:center;color:var(--t2);font-size:11.5px;display:flex;flex-direction:column;gap:6px}
+.drop b{color:var(--t);font-size:12.5px}
+
+/* ---------- centre ---------- */
+.main{padding:14px;display:flex;flex-direction:column;gap:10px;overflow:hidden;min-width:0}
+.pv{flex:1;min-height:0;background:#0c0c0e;border-radius:var(--rb);display:grid;place-items:center;overflow:hidden;position:relative}
+.pv img{height:100%;max-width:100%;object-fit:contain;display:block}
+.ov{position:absolute;background:rgba(0,0,0,.58);color:#fff;font-size:11.5px;padding:3px 10px;border-radius:var(--rch);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ov.a{left:12px;top:12px}.ov.c{left:12px;bottom:12px;font:600 13px ui-monospace,Menlo,monospace}.ov.d{right:12px;bottom:12px}
+.tr{display:flex;align-items:center;gap:8px;height:42px;flex:none}
+.tc{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;margin-right:6px}.tc small{font-size:12px;color:var(--t2);font-weight:500}
+.tb{width:34px;height:34px;border-radius:var(--rc);background:var(--ctl);display:grid;place-items:center;color:var(--t)}
+.tb.p{background:var(--acc);color:var(--onacc);width:42px}
+.tb svg{width:13px;height:13px;fill:currentColor}
+.scal{margin-left:auto;display:flex;gap:8px}
+.scal .btn{height:34px;padding:0 12px 0 9px;gap:8px}
+.scal .btn svg{width:16px;height:16px}
+.tw{background:var(--card);border:1px solid var(--line);border-radius:var(--rb);padding:10px 12px 8px;position:relative;flex:none}
+.th{display:flex;align-items:center;gap:8px;height:26px;margin-bottom:4px}
+.th .chip{padding:0 10px;height:24px;line-height:24px;border-radius:var(--rch);background:var(--ctl);font-size:11.5px;white-space:nowrap}
+.th .chip.on{background:var(--acc);color:var(--onacc);font-weight:600}
+.slid{width:86px;height:5px;border-radius:9px;background:var(--ctl);position:relative}.slid i{position:absolute;left:0;top:0;bottom:0;width:8%;background:var(--acc);border-radius:inherit}.slid u{position:absolute;left:8%;top:50%;width:13px;height:13px;margin:-6.5px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.rul{height:22px;position:relative}
+.rul .kt{position:absolute;bottom:0;width:1px;height:5px;background:var(--t2);opacity:.45}.rul .kt.mj{height:9px;opacity:.9}
+.rul .lb{position:absolute;top:0;font-size:10.5px;color:var(--t2);transform:translateX(-50%);font-variant-numeric:tabular-nums}
+.body{position:relative;display:flex;flex-direction:column;gap:4px}
+.film{display:flex;gap:1px;height:40px;border-radius:5px;overflow:hidden}.film img{flex:1;min-width:0;height:100%;object-fit:cover}
+.wv{display:flex;align-items:center;gap:1px;height:70px;background:color-mix(in srgb,var(--t) 5%,transparent);border-radius:5px}
+.wv i{flex:1;border-radius:1px;background:var(--t2);opacity:.45}
+.lane{position:relative;height:14px;border-radius:4px;background:color-mix(in srgb,var(--t) 5%,transparent);display:none}
+.win[data-s=resultats] .lane,.win[data-s=choix] .lane,.win[data-s=ajoutes] .lane{display:block}
+.lane i{position:absolute;top:3px;bottom:3px;min-width:2px;border-radius:2px;background:var(--acc)}
+.lane i.off{background:var(--t2);opacity:.35}
+.lane-lb{position:absolute;right:6px;top:0;font-size:9.5px;line-height:14px;color:var(--t2);font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+.sgx{position:absolute;top:0;bottom:0;border-radius:4px;background:color-mix(in srgb,var(--seg) 14%,transparent);box-shadow:inset 0 0 0 1.5px var(--seg);display:none}
+.win[data-s=ajoutes] .sgx{display:block}
+.ph{position:absolute;top:-14px;bottom:0;width:2px;margin-left:-1px;background:var(--ph);z-index:3}
+.ph span{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--ph);color:#fff;font:600 10.5px ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:5px;white-space:nowrap}
+.keys{display:flex;gap:10px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,var(--t) 10%,transparent);color:var(--t2);font-size:10.5px;white-space:nowrap;overflow:hidden}
+.keys span{display:inline-flex;gap:5px;align-items:center}
+
+/* ---------- droite : onglet Trouver ---------- */
+.right{padding:14px 14px 14px 0;display:flex;flex-direction:column;gap:10px;overflow:hidden;min-width:0}
+.scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.pane{display:none;flex-direction:column;gap:10px;flex:1;min-height:0}
+.win[data-s=avant] .p-avant,.win[data-s=analyse] .p-analyse,.win[data-s=resultats] .p-res,.win[data-s=choix] .p-choix,.win[data-s=ajoutes] .p-ajoutes,.win[data-s=ajoutes] .p-res{display:flex}
+.p-avant,.p-analyse{justify-content:center}   /* carte seule : centrée dans sa zone (Socle) */
+.p-ajoutes{flex:none}
+.okrow{display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:center}
+.okrow .big{width:32px;height:32px}.okrow .big svg{width:16px;height:16px}
+.center{text-align:center;align-items:center}
+.lead{font-size:13px;font-weight:600}
+.big{width:44px;height:44px;border-radius:50%;background:var(--ctl);display:grid;place-items:center;color:var(--t2)}
+.big svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.facts{display:flex;flex-direction:column;gap:5px;width:100%;text-align:left}
+.facts div{display:grid;grid-template-columns:16px 1fr;gap:8px;align-items:start;color:var(--t2);font-size:11.5px}
+.facts svg,.ic{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;margin-top:1px;flex:none}
+.prog{height:6px;border-radius:9px;background:var(--ctl);overflow:hidden;width:100%}.prog i{display:block;height:100%;background:var(--acc);border-radius:inherit}
+.steps{display:flex;flex-direction:column;gap:6px;width:100%}
+.step{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;font-size:12px}
+.step .v{color:var(--t2);font-variant-numeric:tabular-nums;font-size:11.5px}
+.step.done svg{color:var(--ok)}.step.wait{color:var(--t2)}
+.search{display:flex;align-items:center;gap:8px;background:var(--ctl);border-radius:0;height:34px;padding:0 10px;color:var(--t2);font-size:12px}
+.search svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
+.search span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11.5px;color:var(--t2)}
+.dl .btn{height:24px;font-size:11.5px;padding:0 10px}
+.avs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 6px}
+.av{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border-radius:var(--rc);min-width:0;cursor:pointer}
+.av img{width:54px;height:54px;border-radius:50%;object-fit:cover;display:block;box-shadow:0 0 0 1px var(--line)}
+.av.on{background:var(--ctl)}.av.on img{box-shadow:0 0 0 2px var(--acc)}
+.av .n{font-weight:600;font-size:11.5px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.av .n.unnamed{color:var(--t2);font-weight:500}
+.av .m{color:var(--t2);font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rows{display:flex;flex-direction:column;gap:2px}
+.row{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;padding:6px 8px;border-radius:var(--rc);min-width:0}
+.row.on{background:var(--ctl)}
+.row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .val{color:var(--t2);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row.on .val{color:var(--t)}
+.none{color:var(--t2);font-size:11px;line-height:1.4;padding:2px 8px 0}
+.flt{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 4px;border-radius:var(--rch);background:var(--ctl);font-size:12px;font-weight:600;white-space:nowrap}
+.pill img{width:18px;height:18px;border-radius:50%;object-fit:cover}
+.pill .x{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;color:var(--t2)}
+.pill .x svg{width:8px;height:8px;stroke:currentColor;stroke-width:2.4}
+.pill .ic{margin:0 0 0 4px}
+.op{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--t2);padding:0 2px}
+.opt{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.pas{display:flex;flex-direction:column;gap:4px}
+.pa{display:grid;grid-template-columns:16px 64px 1fr;gap:8px;align-items:center;padding:4px;border-radius:var(--rc)}
+.pa img{width:64px;height:36px;object-fit:cover;border-radius:4px;display:block}
+.pa .tm{font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;white-space:nowrap}
+.pa .tm small{display:block;color:var(--t2);font-weight:500;font-size:11px}
+.ck{width:14px;height:14px;border-radius:4px;background:var(--acc);display:grid;place-items:center}
+.ck svg{width:9px;height:9px;stroke:var(--onacc);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ck.no{background:transparent;box-shadow:inset 0 0 0 1.5px var(--t2)}.ck.no svg{display:none}
+.pa.out{opacity:.5}
+.foot{display:flex;flex-direction:column;gap:8px;flex:none}
+.sumline{display:flex;justify-content:space-between;align-items:baseline;font-size:12px}
+.sumline b{font-variant-numeric:tabular-nums}
+.okbox{display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center}
+.okbox .big{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
+.go{height:42px;font-size:13.5px;background:var(--sand);color:#2a1d0c;font-weight:600}
+</style></head><body>
+
+<div class="top"><h1>mSLICE — onglet « Trouver »</h1><span class="sub0">Maquette Flat Mat · vrai contenu : « Dr House Best Of » (28:05), analysé sur ce Mac</span></div>
+<div class="tabs" id="states">
+  <button data-s="avant">1. Avant l'analyse</button>
+  <button data-s="analyse">2. Analyse en cours</button>
+  <button data-s="resultats" class="on">3. Résultats</button>
+  <button data-s="choix">4. Personnage choisi</button>
+  <button data-s="ajoutes">5. Morceaux ajoutés</button>
+  <span class="sep"></span>
+  <button data-th="sombre" class="on">Sombre</button>
+  <button data-th="clair">Clair</button>
+</div>
+<p class="legend" id="leg"></p>
+
+<div class="stage">
+<div class="win" id="win" data-th="sombre" data-s="resultats">
+  <div class="bar">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="brand"><b>m</b>SLICE</div>
+    <div class="finfo"><b>Dr House Best Of - Les Moments les plus Drôles (Saison 1 à 8) VF.mp4</b> · 1920×1078 · H.264 · 30 i/s · AAC 44,1 kHz · 28:05.5 · 289 Mo</div>
+    <div class="r"><span class="btn">Raccourcis <kbd>⌘/</kbd></span></div>
+  </div>
+
+  <aside class="side">
+    <div class="h">Fichiers ouverts · 1</div>
+    <div class="file on"><div class="fi">MP4</div><div style="min-width:0"><div class="fn">Dr House Best Of - Les Moments les plus Drôles (Saison 1 à 8) VF.mp4</div><div class="fs">28:05 · 289 Mo</div></div></div>
+    <div class="drop"><b>Déposez des fichiers ici</b><span>ou clic droit dans le Finder ▸ Extraire avec mSLICE</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="pv"><img src="assets-trouver/ecran.jpg" alt=""><span class="ov a" id="ovname">Dr House Best Of - Les Moments les plus Drôles (Saison 1 à 8) VF.mp4</span><span class="ov c">3:33.5</span><span class="ov d">image 6 405 · 30 i/s</span></div>
+    <div class="tr">
+      <div class="tc">3:33.5 <small>/ 28:05.5</small></div>
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></span>
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M11 5v14L3 12zM21 5v14l-8-7z"/></svg></span>
+      <span class="tb p"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></span>
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M3 5v14l8-7zM13 5v14l8-7z"/></svg></span>
+      <span class="tb"><svg viewBox="0 0 24 24"><path d="M4 5v14l11-7zM16 5h2v14h-2z"/></svg></span>
+      <div class="scal"><span class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21L14 10M14 10l5-5c1.2 1.2 1.6 2.6 1 3.4L17 13"/></svg><kbd>I</kbd> Entrée</span><span class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21L14 10M14 10l5-5c1.2 1.2 1.6 2.6 1 3.4L17 13"/></svg><kbd>O</kbd> Sortie</span></div>
+    </div>
+    <div class="tw">
+      <div class="th"><span class="sub">Zoom</span><div class="slid"><i></i><u></u></div><span class="sub">1×</span><span class="chip on">Aimant : images clés</span><span class="chip">Auto : silences début/fin</span></div>
+      <div class="rul" id="rul"></div>
+      <div class="body" id="tl">
+        <div class="film" id="film"></div>
+        <div class="wv" id="wv"></div>
+        <div class="lane" id="lane"><span class="lane-lb" id="lanelb">House</span></div>
+      </div>
+      <div class="keys"><span><kbd>I</kbd> entrée</span><span><kbd>O</kbd> sortie</span><span><kbd>Espace</kbd> lecture</span><span><kbd>J K L</kbd> vitesse</span><span><kbd>← →</kbd> image</span><span><kbd>↑ ↓</kbd> image clé</span><span><kbd>⌫</kbd> suppr.</span></div>
+    </div>
+  </main>
+
+  <aside class="right">
+    <div class="seg3"><span>Édition</span><span class="on">Trouver</span><span>Agent</span></div>
+
+    <!-- 1. avant l'analyse -->
+    <div class="pane p-avant">
+      <div class="card center" style="padding:20px 16px;gap:10px">
+        <div class="big"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></div>
+        <div class="lead">Trouver dans la vidéo</div>
+        <div class="sub" style="line-height:1.45">Repérez les personnages, les types de scènes et les sons, puis transformez leurs passages en morceaux.</div>
+        <div class="facts">
+          <div><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Environ 45 s pour ce fichier de 28 min.</span></div>
+          <div><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>Tout reste sur ce Mac : rien n'est envoyé.</span></div>
+          <div><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span>Le résultat est gardé : pas besoin de recommencer à la prochaine ouverture.</span></div>
+        </div>
+        <span class="btn pri" style="margin-top:4px;min-width:140px">Analyser</span>
+      </div>
+    </div>
+
+    <!-- 2. analyse en cours -->
+    <div class="pane p-analyse">
+      <div class="card center" style="padding:20px 16px;gap:10px">
+        <div class="lead">Analyse en cours… 62 %</div>
+        <div class="prog"><i style="width:62%"></i></div>
+        <div class="steps">
+          <div class="step done"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span>Sons</span><span class="v">303 types · 5 s</span></div>
+          <div class="step"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg><span>Images et visages</span><span class="v">17:24 / 28:05</span></div>
+          <div class="step wait"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" opacity=".5"/></svg><span>Regroupement des personnages</span><span class="v">en attente</span></div>
+        </div>
+        <div class="sub">Encore environ 17 s. Vous pouvez continuer à travailler.</div>
+        <span class="btn" style="min-width:140px">Annuler</span>
+      </div>
+    </div>
+
+    <!-- 5. morceaux ajoutés : confirmation compacte, les résultats restent dessous pour continuer -->
+    <div class="pane p-ajoutes">
+      <div class="card okbox" style="align-items:stretch;text-align:left">
+        <div class="okrow"><div class="big"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div><div><div class="lead" id="oklead"></div><div class="sub">Sur la timeline et dans l'onglet Édition. ⌘Z annule.</div></div></div>
+        <span class="btn pri wide">Ouvrir l'onglet Édition</span>
+      </div>
+    </div>
+
+    <!-- 3. résultats -->
+    <div class="pane p-res">
+      <div class="scroll">
+        <div class="card">
+          <div class="hh"><span class="h">Analysé</span><span class="tag ok">43 s · 587 plans</span></div>
+          <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span>Rechercher dans la vidéo…</span></div>
+          <div class="dl"><span>Recherche libre · 180 Mo</span><span class="btn">Télécharger</span></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Personnages · 6</span><span class="tag ver">1.3</span></div>
+          <div class="avs" id="avs"></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Scènes</span><span class="tag ver">1.2</span></div>
+          <div class="rows" id="scenes"></div>
+          <div class="none">Pas de feu, d'explosion ni de foule parmi les scènes principales de ce fichier.</div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Sons</span><span class="tag ver">1.2</span></div>
+          <div class="rows" id="sounds"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. personnage choisi -->
+    <div class="pane p-choix">
+      <div class="card" style="flex:none">
+        <div class="hh"><span class="h">Sélection</span><span class="sub" id="selcount"></span></div>
+        <div class="flt"><span class="pill"><img src="assets-trouver/av1.jpg" alt="">House<span class="x"><svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></span><span class="op">SAUF</span><span class="pill"><svg class="ic" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>Musique<span class="x"><svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2l-6 6"/></svg></span></span></div>
+        <div class="opt"><span>Plans entiers</span><span class="sw on"></span></div>
+      </div>
+      <div class="card" style="flex:1;min-height:0">
+        <div class="hh"><span class="h">Passages</span><span class="sub">tout cocher</span></div>
+        <div class="scroll"><div class="pas" id="pas"></div></div>
+      </div>
+      <div class="foot">
+        <div class="sumline"><span class="sub">Morceaux à ajouter (passages voisins réunis)</span><b id="sumdur"></b></div>
+        <span class="btn pri wide" style="height:36px" id="addbtn"></span>
+      </div>
+    </div>
+
+    </aside>
+</div>
+</div>
+
+<script>
+const D=1685.5;
+// Analyse réelle (essai du 24/11/2026, outils natifs d'Apple). Regroupement des visages : empreinte générique d'Apple, encore imprécise.
+const SUBJ=[
+ {img:'av1',name:'House',app:22,sec:74,iv:[[212,216],[224,230],[384,386],[390,392],[400,402],[408,410],[414,416],[420,424],[428,434],[442,444],[470,474],[636,640],[734,740],[760,762],[774,776],[782,788],[1002,1004],[1290,1292],[1296,1298],[1344,1348],[1360,1366],[1660,1662]]},
+ {img:'av6',name:'',app:36,sec:144},{img:'av5',name:'',app:28,sec:84},{img:'av4',name:'',app:27,sec:82},{img:'av2',name:'',app:20,sec:74},{img:'av3',name:'',app:18,sec:74}];
+const MUSIC=[[80.2,81.8],[84.8,99],[100.5,109.5],[185.2,188.2],[191.2,193.5],[201.8,203.2],[227.2,228.8],[420.8,423],[425.2,428.2],[437.2,443.2],[474.8,481.5],[512.2,515.2],[552,555.8],[561,565.5],[575.2,586.5],[602.2,605.2],[617.2,619.5],[634.5,636],[642.8,657],[681.8,684.8],[786,789],[871.5,874.5],[905.2,906.8],[935.2,936.8],[944.2,951.8],[1048.5,1050],[1095.8,1100.2],[1112.2,1113.8],[1116.8,1122],[1129.5,1131],[1132.5,1134],[1166.2,1176],[1302.8,1304.2],[1365,1368],[1371,1373.2],[1578.8,1580.2],[1642.5,1644],[1671,1672.5],[1677.8,1680.8],[1682.2,1685.2]];
+const SCENES=[['users','Personnes','27:10'],['shirt','Costumes','12:32'],['shirt','Cravates','4:14'],['book','Bibliothèques','1:48'],['book','Documents','1:28'],['car','Véhicules','1:06'],['door','Portes','1:02'],['coat','Blouses de médecin','0:46']];
+const SOUNDS=[['speech','Parole','59','23:13'],['music','Musique','40','2:36'],['door','Portes','13','0:22'],['burp','Rots','13','0:21'],['whisper','Chuchotements','8','0:13'],['sneeze','Éternuements','5','0:07'],['thunder','Tonnerre','4','0:06'],['laugh','Rires','2','0:04']];
+const ICON={
+ users:'<circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2c2.4.2 4.2 2 4.8 4.8"/>',
+ shirt:'<path d="M8 4l4 3 4-3 4 3-2 4h-2v9H8v-9H6L4 7z"/>',
+ book:'<path d="M4 5c3-1 5-1 8 1 3-2 5-2 8-1v14c-3-1-5-1-8 1-3-2-5-2-8-1z"/><path d="M12 6v14"/>',
+ door:'<path d="M6 21V4h12v17"/><path d="M4 21h16"/><circle cx="15" cy="12.5" r=".9"/>',
+ car:'<path d="M4 15l1.5-5h13L20 15v3h-2.5M4 15v3h2.5M4 15h16"/><circle cx="7.5" cy="18" r="1.6"/><circle cx="16.5" cy="18" r="1.6"/>',
+ coat:'<path d="M9 3h6l4 4v14h-5l-2-9-2 9H5V7z"/><path d="M12 12V3"/>',
+ speech:'<path d="M4 6h16v10H10l-4 4v-4H4z"/>',
+ music:'<path d="M9 18V6l10-2v12"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/>',
+ burp:'<circle cx="12" cy="12" r="7"/><path d="M9 14c1.5 1.4 4.5 1.4 6 0"/>',
+ whisper:'<path d="M5 12h3M10 9v6M14 7v10M18 10v4"/>',
+ sneeze:'<path d="M4 12h6M14 8l4-3M14 16l4 3M14 12h6"/>',
+ thunder:'<path d="M13 3L6 14h5l-1 7 7-11h-5z"/>',
+ laugh:'<circle cx="12" cy="12" r="8"/><path d="M8 13c1 2.4 7 2.4 8 0z"/><path d="M9 9.5h.01M15 9.5h.01"/>'};
+const svg=k=>`<svg class="ic" viewBox="0 0 24 24">${ICON[k]}</svg>`;
+const mmss=s=>Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
+const pct=t=>(t/D*100).toFixed(3)+'%';
+const win=document.getElementById('win');
+
+// timeline : règle, pellicule, onde, piste de résultats
+const rul=document.getElementById('rul');
+for(let m=0;m<=28;m++){const k=document.createElement('i');k.className='kt'+(m%5===0?' mj':'');k.style.left=pct(m*60);rul.appendChild(k);
+ if(m%5===0&&m>0){const l=document.createElement('span');l.className='lb';l.style.left=pct(m*60);l.textContent=m+':00';rul.appendChild(l)}}
+document.getElementById('film').innerHTML=[...Array(16).keys()].map(k=>`<img src="assets-trouver/film${k}.jpg" alt="">`).join('');
+let a=7;const rnd=()=>{a=(a*16807)%2147483647;return a/2147483647};
+document.getElementById('wv').innerHTML=[...Array(260).keys()].map(i=>{const t=i/260*D;const mus=MUSIC.some(([x,y])=>t>=x-4&&t<=y+4);const h=mus?55+rnd()*40:18+rnd()*52;return `<i style="height:${h.toFixed(0)}%"></i>`}).join('');
+const tl=document.getElementById('tl');
+const ph=document.createElement('div');ph.className='ph';ph.style.left=pct(213.5);ph.innerHTML='<span>3:33.5</span>';tl.appendChild(ph);
+
+// passages de House, sauf musique, en plans entiers (calage approximatif ± 1,5 s pour la maquette)
+const H=SUBJ[0].iv;
+const withMusic=iv=>MUSIC.some(([x,y])=>iv[0]<y&&iv[1]>x);
+const kept=H.filter(iv=>!withMusic(iv)).map(([x,y])=>[Math.max(0,x-1.5),y+1.5]);
+const merged=[];for(const iv of kept){const l=merged[merged.length-1];if(l&&iv[0]-l[1]<1.5)l[1]=Math.max(l[1],iv[1]);else merged.push([...iv])}
+const lane=document.getElementById('lane');
+H.forEach(iv=>{const e=document.createElement('i');e.className=withMusic(iv)?'off':'';e.style.left=pct(iv[0]);e.style.width=pct(iv[1]-iv[0]);lane.appendChild(e)});
+merged.forEach(iv=>{const s=document.createElement('div');s.className='sgx';s.style.left=pct(iv[0]);s.style.width=pct(iv[1]-iv[0]);tl.insertBefore(s,ph)});
+const total=merged.reduce((s,[x,y])=>s+y-x,0);
+document.getElementById('selcount').textContent=`${kept.length} passages retenus sur ${H.length}`;
+document.getElementById('sumdur').textContent=`${merged.length} · ${mmss(total)}`;
+document.getElementById('addbtn').textContent=`Ajouter ${merged.length} morceaux`;
+document.getElementById('oklead').textContent=`${merged.length} morceaux ajoutés (${mmss(total)})`;
+const thumbs=['passage1','passage2','passage3','passage4','passage5','passage6','passage7','passage8'];
+document.getElementById('pas').innerHTML=H.map((iv,i)=>{const out=withMusic(iv);const img=thumbs[i]?`<img src="assets-trouver/${thumbs[i]}.jpg" alt="">`:`<img src="assets-trouver/film${Math.min(15,Math.floor(iv[0]/D*16))}.jpg" alt="">`;
+ return `<div class="pa${out?' out':''}"><span class="ck${out?' no':''}"><svg viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3L9.5 3.5"/></svg></span>${img}<span class="tm">${mmss(iv[0])} → ${mmss(iv[1])}<small>${out?'écarté : musique':(iv[1]-iv[0])+' s'}</small></span></div>`}).join('');
+
+// personnages, scènes, sons
+document.getElementById('avs').innerHTML=SUBJ.map((s,i)=>`<div class="av${i===0?' on':''}"><img src="assets-trouver/${s.img}.jpg" alt=""><span class="n${s.name?'':' unnamed'}">${s.name||'Personnage '+(i+1)}</span><span class="m">${s.app} · ${mmss(s.sec)}</span></div>`).join('');
+document.getElementById('scenes').innerHTML=SCENES.map(([k,n,v])=>`<div class="row">${svg(k)}<span class="nm">${n}</span><span class="val">${v}</span></div>`).join('');
+document.getElementById('sounds').innerHTML=SOUNDS.map(([k,n,c,v],i)=>`<div class="row${i===1?' on':''}">${svg(k)}<span class="nm">${n}</span><span class="val">${c} · ${v}</span></div>`).join('');
+
+const L={
+ avant:"<b>Avant l'analyse.</b> La carte explique ce que fait l'analyse, sa durée réelle (≈ 45 s mesurées pour ce fichier) et rassure : rien ne sort du Mac. Le bouton est centré sous le texte.",
+ analyse:"<b>Analyse en cours.</b> « Annuler » prend la place d'« Analyser ». Les sons sont finis en premier (5 s), les images suivent ; on peut continuer à travailler.",
+ resultats:"<b>Résultats</b> (vrais chiffres de l'analyse). Un clic sur un personnage, une scène ou un son le place dans la sélection ; une piste fine apparaît sous la forme d'onde. Badges 1.2 / 1.3 : version qui apporte la section. Personnages : <b>l'essai avec l'empreinte générique d'Apple mélange encore des personnes différentes</b> ; la 1.3 demandera un vrai modèle de visage. Musique sélectionnée ici pour montrer la ligne active.",
+ choix:"<b>Personnage choisi.</b> House, SAUF quand il y a de la musique, en plans entiers. Les passages écartés restent visibles (grisés, raison écrite) et la piste les montre en gris. Le bouton dit combien de morceaux seront ajoutés.",
+ ajoutes:"<b>Morceaux ajoutés.</b> Ils apparaissent en orange sur la timeline, comme ceux posés au bistouri ; l'export (bouton sable) reste dans l'onglet Édition. ⌘Z annule l'ajout."};
+const leg=document.getElementById('leg');
+function setS(s){win.dataset.s=s;document.querySelectorAll('#states button[data-s]').forEach(b=>b.classList.toggle('on',b.dataset.s===s));leg.innerHTML=L[s];document.getElementById('lanelb').style.display=s==='ajoutes'?'none':''}
+function setT(t){win.dataset.th=t;document.querySelectorAll('#states button[data-th]').forEach(b=>b.classList.toggle('on',b.dataset.th===t))}
+document.querySelectorAll('#states button').forEach(b=>b.onclick=()=>b.dataset.s?setS(b.dataset.s):setT(b.dataset.th));
+setS('resultats');
+
+// audit : aucun texte tronqué sans points de suspension, rien qui dépasse de sa carte ou touche son bord
+window.auditTrouver=function(){
+  const out=[];const W=win.getBoundingClientRect();
+  win.querySelectorAll('.card,.tw').forEach(c=>{if(!c.offsetParent)return;const cr=c.getBoundingClientRect();
+    c.querySelectorAll('*').forEach(e=>{if(!e.offsetParent||e.closest('.scroll')&&e.closest('.scroll')!==c&&!c.contains(e.closest('.scroll')))return;const r=e.getBoundingClientRect();if(r.width===0)return;
+      const sc=e.closest('.scroll');if(sc){const sr=sc.getBoundingClientRect();if(r.bottom<sr.top||r.top>sr.bottom)return}
+      if(r.left<cr.left+1-0.5||r.right>cr.right-1+0.5)out.push(`déborde de sa carte : ${e.className||e.tagName} « ${(e.textContent||'').trim().slice(0,30)} »`)})});
+  win.querySelectorAll('span,div,b').forEach(e=>{if(!e.offsetParent||e.children.length)return;const cs=getComputedStyle(e);if(e.scrollWidth>e.clientWidth+1&&cs.textOverflow!=='ellipsis'&&cs.overflow!=='visible')out.push(`tronqué : « ${e.textContent.trim().slice(0,30)} »`)});
+  return out;
+};
+</script>
+</body></html>
