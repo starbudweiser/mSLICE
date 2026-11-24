@@ -275,6 +275,16 @@ enum UITest {
         check(delegate.batchWindow != nil, "mslice://trim : fenêtre d'élagage en lot ouverte")
         delegate.batchWindow?.close()
 
+        // fenêtre des réglages : ouverture sans plantage, avec la vue réellement affichée un moment
+        delegate.openSettings()
+        await wait(1.5)
+        check(delegate.settingsWindow?.isVisible == true || delegate.settingsWindow != nil, "réglages : fenêtre ouverte sans plantage")
+        delegate.settingsWindow?.close()
+        delegate.showAbout()
+        await wait(0.5)
+        delegate.openSettings(); await wait(0.5); delegate.settingsWindow?.close()
+        check(true, "réglages : réouverture sans plantage")
+
         // suppression et annulation
         _ = key("\u{7F}", 51)
         check(d.segments.count == 1, "⌫ : morceau supprimé")

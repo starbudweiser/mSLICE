@@ -37,6 +37,8 @@ sed -e "s/__ID__/$ID/g" -e "s/__NAME__/$NAME/g" -e "s/__VERSION__/$VERSION/g" -e
 sed -e "s/__ID__/$ID/g" -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" -e "s/__SCHEME__/$SCHEME/g" Resources/Finder-Info.plist > "$APP/Contents/PlugIns/FinderExt.appex/Contents/Info.plist"
 [ -f assets/mSLICE.icns ] && cp assets/mSLICE.icns "$APP/Contents/Resources/AppIcon.icns"
 for l in Resources/*.lproj; do cp -R "$l" "$APP/Contents/Resources/"; done
+# licences des composants embarqués (ffmpeg LGPL, LAME, mpg123, Opus, libvpx) et de l'appli
+mkdir -p "$APP/Contents/Resources/Licenses"; cp licenses/* LICENSE THIRD_PARTY_LICENSES.md "$APP/Contents/Resources/Licenses/"
 rm -rf build
 
 # Signature : tout (ffmpeg, extension), puis l'extension avec ses droits (sandbox), puis l'appli pour sceller l'extension finale.

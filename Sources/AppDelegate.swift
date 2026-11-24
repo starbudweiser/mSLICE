@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var launched = false
     var queued: [URL] = []
     func arg(_ name: String) -> String? { args.firstIndex(of: name).flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } }
-    var silent: Bool { args.contains("--silent") || arg("--capture") != nil || arg("--selftest-ui") != nil }
+    var silent: Bool { args.contains("--silent") || arg("--capture") != nil || arg("--selftest-ui") != nil || arg("--capture-about") != nil }
 
     func applicationWillFinishLaunching(_ n: Notification) {
         AppDelegate.shared = self
@@ -31,6 +31,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !AppModel.isDev, !silent { UpdateEngine.shared.start() }
         if !silent, !AppModel.isDev { DispatchQueue.global(qos: .utility).async { if !FinderExtension.isEnabled() { FinderExtension.enable() } } }
 
+        if let out = arg("--capture-about") {          // fenêtre « À propos » seule, hors écran : capture et audit des marges
+            let w = About.makeWindow()
+            let problems = About.audit(w)
+            if args.contains("--verbose"), let c = w.contentView { func dump(_ v: NSView) { for x in v.subviews { if let t = x as? NSTextField { let f = x.convert(x.bounds, to: c); print("  \(Int(f.minX))→\(Int(f.maxX)) (\(Int(f.width)) px, \(Int(f.height)) haut) \(t.stringValue.prefix(30))") }; dump(x) } }; dump(c) }
+            print("À PROPOS \(L.lang) : \(Int(w.contentView?.bounds.width ?? 0))×\(Int(w.contentView?.bounds.height ?? 0)) ; " + (problems.isEmpty ? "marges OK" : problems.joined(separator: " | ")))
+            if let v = w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) { v.cacheDisplay(in: v.bounds, to: rep); try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out)) }
+            exit(problems.isEmpty ? 0 : 1)
+        }
         if let f = arg("--selftest-ui") {
             model.testMode = true; openMainWindow(show: false)
             Task { @MainActor in exit(await UITest.run(path: f, delegate: self)) }
@@ -123,25 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         batchWindow = w
     }
 
-    @objc func showAbout() {
-        let info = Bundle.main.infoDictionary ?? [:]
-        let v = info["CFBundleShortVersionString"] as? String ?? "?", b = info["CFBundleVersion"] as? String ?? "?"
-        let icon = NSImageView(image: NSApp.applicationIconImage); icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.widthAnchor.constraint(equalToConstant: 84).isActive = true; icon.heightAnchor.constraint(equalToConstant: 84).isActive = true
-        func label(_ s: String, size: CGFloat = 12, bold: Bool = false, secondary: Bool = false, brand: Bool = false) -> NSTextField {
-            let p = NSMutableParagraphStyle(); p.alignment = .center
-            let a = NSMutableAttributedString(string: s, attributes: [.font: bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size), .paragraphStyle: p, .foregroundColor: secondary ? NSColor.secondaryLabelColor : NSColor.labelColor])
-            if brand { a.addAttribute(.foregroundColor, value: Theme.brandNS, range: NSRange(location: 0, length: 1)) }
-            let f = NSTextField(wrappingLabelWithString: s); f.attributedStringValue = a; f.alignment = .center; f.preferredMaxLayoutWidth = 300; f.isSelectable = false; f.translatesAutoresizingMaskIntoConstraints = false
-            return f
-        }
-        let support = NSButton(title: "♥ " + L.t("about.support"), target: self, action: #selector(openSupport)); support.isBordered = false; support.contentTintColor = .secondaryLabelColor
-        let stack = NSStackView(views: [icon, label("mSLICE", size: 17, bold: true, brand: true), label(L.t("about.version", v, b), secondary: true), label(L.t("app.tagline")),
-                                        label("Starbudweiser & Claude Code (Anthropic)", bold: true), label(L.t("about.collection"), secondary: true), support])
-        stack.orientation = .vertical; stack.alignment = .centerX; stack.spacing = 10; stack.edgeInsets = NSEdgeInsets(top: 34, left: 28, bottom: 24, right: 28)
-        panel(NSSize(width: 360, height: 360), stack, store: &aboutWindow)
-    }
-    @objc func openSupport() { NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/starbudweiser")!) }
+    @objc func showAbout() { About.show() }
 
     // MARK: Menus
 

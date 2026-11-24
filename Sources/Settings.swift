@@ -11,6 +11,10 @@ enum FinderExtension {
     }
     /// Demande l'activation (équivalent de la case dans Réglages Système ▸ Extensions).
     static func enable() { _ = shell("/usr/bin/pluginkit", ["-e", "use", "-i", id]) }
+    /// Versions asynchrones pour les vues : `Process.waitUntilExit` fait tourner la boucle d'événements, ce qui relance le rendu
+    /// SwiftUI en pleine mise à jour (plantage) quand on l'appelle depuis une vue ou un gestionnaire de bouton.
+    static func status() async -> Bool { await Task.detached(priority: .userInitiated) { isEnabled() }.value }
+    static func activate() async { await Task.detached(priority: .userInitiated) { enable() }.value }
     @discardableResult static func shell(_ exe: String, _ args: [String]) -> String {
         let p = Process(); p.executableURL = URL(fileURLWithPath: exe); p.arguments = args
         let o = Pipe(); p.standardOutput = o; p.standardError = FileHandle.nullDevice
@@ -26,7 +30,7 @@ struct SettingsView: View {
     @AppStorage("revealAfter") private var revealAfter = true
     @AppStorage("trashAfter") private var trashAfter = false
     @AppStorage("autoUpdate") private var autoUpdate = true
-    @State private var finderOn = FinderExtension.isEnabled()
+    @State private var finderOn: Bool? = nil          // inconnu tant que la vérification en tâche de fond n'est pas terminée
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -48,9 +52,17 @@ struct SettingsView: View {
             group(L.t("settings.finder")) {
                 row(L.t("settings.finder.ext")) {
                     HStack(spacing: 8) {
-                        Tag(text: finderOn ? L.t("settings.finder.on") : L.t("settings.finder.off"), kind: finderOn ? .ok : .warn)
-                        if !finderOn { Button(L.t("settings.finder.open")) { FinderExtension.enable(); NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences")!)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { finderOn = FinderExtension.isEnabled() } }.buttonStyle(FlatButton(height: 24)) }
+                        Tag(text: finderOn == nil ? "…" : (finderOn! ? L.t("settings.finder.on") : L.t("settings.finder.off")), kind: finderOn == nil ? .plain : (finderOn! ? .ok : .warn))
+                        if finderOn == false {
+                            Button(L.t("settings.finder.open")) {
+                                Task {
+                                    await FinderExtension.activate()
+                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences")!)
+                                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                    finderOn = await FinderExtension.status()
+                                }
+                            }.buttonStyle(FlatButton(height: 24))
+                        }
                     }
                 }
             }
@@ -68,7 +80,7 @@ struct SettingsView: View {
             }
         }
         .padding(20).frame(width: 560).background(Theme.bg)
-        .onAppear { finderOn = FinderExtension.isEnabled() }
+        .task { finderOn = await FinderExtension.status() }
     }
 
     private func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {

@@ -30,6 +30,10 @@ mSLICE sert à **élaguer** des fichiers audio et vidéo : retirer les 10 ou 20 
 | `⌫`, `⌘Z` | supprimer le morceau, annuler |
 | `⌘↩` | extraire |
 
+## Installation
+
+Téléchargez le `.zip` de la dernière [release](https://github.com/starbudweiser/mSLICE/releases/latest), décompressez-le et glissez **mSLICE.app** dans vos Applications. L'appli est signée et notarisée par Apple ; elle exige un Mac Apple Silicon sous macOS 14 ou plus récent, et se met à jour toute seule. Au premier lancement, elle active l'extension du clic droit (Réglages Système ▸ Extensions ▸ Finder si macOS le demande).
+
 ## Moteur
 
 ffmpeg et ffprobe **LGPL** statiques sont embarqués (`Contents/Helpers`) : `ffmpeg/build_ffmpeg.sh` les compile depuis la source officielle, sans GPL (H.264 / HEVC / ProRes passent par VideoToolbox, MP3 par LAME, Opus par libopus, VP9 par libvpx). Aucun accès réseau.
@@ -42,6 +46,10 @@ DEV=1 ./build_app.sh          # mSLICE DEV.app (dans le dossier du projet)
 ```
 
 Essais sans fenêtre : `mSLICE --selftest <fichier>` (export), `--selftest-editor <fichier>` (bistouri), `--selftest-ui <fichier>` (interface), `--selftest-batch <fichier>` (lot), `--check-l10n`.
+
+## Licence
+
+mSLICE est publié sous licence MIT (voir `LICENSE`). Il embarque FFmpeg (LGPL 2.1), LAME, mpg123, Opus et libvpx : voir `THIRD_PARTY_LICENSES.md` et le dossier `licenses/`.
 
 ## Support / Soutenir
 
