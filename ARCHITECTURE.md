@@ -65,3 +65,24 @@ Appli macOS 14+ (testée sur macOS 27), Swift / SwiftUI + AppKit, design **Flat 
 ## 8. Hors périmètre de la v1
 
 Montage multi-pistes, effets, sous-titres, « Précis aux bords » (prévu en v1.1), transcodage par lot vers des préréglages de plateforme.
+
+
+## 9. Défilement instantané (v1.1)
+
+Pendant qu'on déplace la tête de lecture, `Scrub.swift` décode en matériel (AVAssetReader → VideoToolbox) le groupe d'images qui contient l'instant visé, depuis son
+image clé, et affiche les images par une `AVSampleBufferDisplayLayer` posée sur le lecteur. L'image clé arrive en ≈ 20 ms, les suivantes à plusieurs centaines d'images par
+seconde ; revenir dans un groupe décodé est instantané et exact à l'image. AVPlayer n'est sollicité qu'au relâchement (position exacte) puis la couche s'efface.
+Réserve d'images : 3 % de la RAM, 400 Mo au plus, libérée après 12 s sans demande et sous pression mémoire. Fichiers pivotés ou audio seul : AVPlayer comme avant.
+
+## 10. Pilotage par un agent (v1.1)
+
+- **Noyau commun** (`AgentCore.swift`, sans interface) : 17 outils (état, sondage, silences, image d'un instant, morceaux, aperçu et export, élagage en lot, ouverture, tête de lecture).
+  Garde-fous appliqués par le noyau, quel que soit l'agent : nouveaux fichiers seulement (jamais d'écrasement, de suppression ni de corbeille), écriture limitée au dossier du fichier
+  source (ou sous-dossier, liens symboliques résolus) et au dossier d'export de l'utilisateur, chemins sans caractères de contrôle, nombres finis, journal `agent.log` (rotation 1 Mo).
+  Désactivé par défaut : réglage « Autoriser un agent à piloter mSLICE » (Réglages ▸ Agent).
+- **Serveur MCP** `mSLICE.app/Contents/MacOS/mslice-mcp` (stdio, JSON-RPC 2.0) : compilé avec le noyau seul. Appli ouverte, l'appel est transmis par une prise Unix (`agent.sock`, droits 0600,
+  8 clients au plus) et exécuté dans l'appli : la timeline se met à jour en direct. Appli fermée, l'outil s'exécute sans fenêtre ; les morceaux sont gardés par fichier (`SessionStore`).
+- **Panneau de discussion** (onglet « Agent » du panneau de droite) : moteurs Claude Code (CLI de l'utilisateur, abonnement, relié à `mslice-mcp`), API Anthropic, ou service compatible OpenAI
+  (Ollama, LM Studio, OpenAI, OpenRouter…). Les deux derniers exécutent la boucle d'outils dans l'appli. Clés dans le Trousseau, envoyées seulement en HTTPS (ou vers le réseau local).
+- Essais : `scripts/mcp_e2e.py` (serveur autonome, garde-fous, entrées hostiles), `--selftest-ui` (pont vers l'appli ouverte, panneau avec `scripts/mock_llm.py` via `MSLICE_TEST_LLM`,
+  Claude Code réel via `MSLICE_TEST_CLAUDE=1`), `MSLICE_PERF=1` (mémoire et processeur par étape).

@@ -2,7 +2,7 @@
 
 ## About
 
-**mSLICE** is a small, fast macOS tool that does one thing: cut pieces out of audio and video files. Mark an in and an out point with the **I** and **O** keys, keep as many pieces as you like in the same file, and export them as separate numbered files or as one merged file. With *No re-encoding* (direct stream copy) a multi‑gigabyte rush is trimmed in a fraction of a second, with no quality loss. Part of the **DESKTOP MAC TOOLKIT**.
+**mSLICE** is a small, fast macOS tool that does one thing: cut pieces out of audio and video files. Mark an in and an out point with the **I** and **O** keys, keep as many pieces as you like in the same file, and export them as separate numbered files or as one merged file. With *No re-encoding* (direct stream copy) a multi‑gigabyte rush is trimmed in a fraction of a second, with no quality loss. The playhead follows the mouse frame by frame, and an optional AI agent (chat panel or MCP server) can cut, merge and export on request — it only ever creates new files. Part of the **DESKTOP MAC TOOLKIT**.
 
 ## À propos
 
@@ -15,6 +15,8 @@ mSLICE sert à **élaguer** des fichiers audio et vidéo : retirer les 10 ou 20 
 - **Formats** : tout ce que ffprobe sait lire en entrée (MOV, MP4, MKV, AVI, WebM, MXF, MTS, WAV, AIFF, MP3, AAC, FLAC, OGG, Opus…). En sortie : MP4, MOV, MKV, WebM, MP3, M4A, WAV, FLAC, AIFF, Opus, ou le conteneur d'origine.
 - **Recompression** (au choix) : H.264 / H.265 / ProRes en matériel (VideoToolbox), VP9 pour le WebM.
 - **Clic droit dans le Finder** : « Extraire des morceaux avec mSLICE… » et « Élaguer début et fin avec mSLICE… » (lot : retire X s au début et Y s à la fin de plusieurs fichiers, ou les silences d'ouverture et de fin).
+- **Défilement instantané** : la tête de lecture suit la souris image par image, même sur du H.264 long GOP (décodage matériel, réserve d'images libérée au repos).
+- **Pilotage par un agent** (désactivé par défaut) : un panneau de discussion (Claude Code, API Anthropic, Ollama / LM Studio / OpenAI…) et un serveur MCP (`mslice-mcp`, pour Claude Code, Claude Desktop, Cursor, Codex, Gemini CLI) découpent, fusionnent et exportent à votre demande. L'agent crée de nouveaux fichiers ; il ne supprime ni n'écrase jamais rien.
 - Les originaux ne sont jamais modifiés ; option « mettre l'original à la corbeille » après l'export.
 - Quatre langues (français, anglais, espagnol, italien), thème clair / sombre / auto, mise à jour automatique.
 
@@ -44,6 +46,8 @@ ffmpeg et ffprobe **LGPL** statiques sont embarqués (`Contents/Helpers`) : `ffm
 DEV=1 ./build_app.sh          # mSLICE DEV.app (dans le dossier du projet)
 ./build_app.sh                # mSLICE.app, installée dans ~/Applications/Applications Personnelles
 ```
+
+Serveur MCP : `mSLICE.app/Contents/MacOS/mslice-mcp` (réglages ▸ Agent : boutons de copie pour Claude Code, Claude Desktop, Cursor, Codex, Gemini CLI). Essais : `scripts/mcp_e2e.py`.
 
 Essais sans fenêtre : `mSLICE --selftest <fichier>` (export), `--selftest-editor <fichier>` (bistouri), `--selftest-ui <fichier>` (interface), `--selftest-batch <fichier>` (lot), `--check-l10n`.
 
