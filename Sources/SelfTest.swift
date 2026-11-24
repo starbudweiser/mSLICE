@@ -166,6 +166,44 @@ enum EditorTest {
     }
 }
 
+/// Client MCP minimal pour les essais : lance `mslice-mcp` et dialogue en JSON-RPC par ses tubes.
+final class MCPProc: @unchecked Sendable {
+    private let p = Process(), inp = Pipe(), outp = Pipe()
+    private var buf = Data(), nextID = 0
+    init?(env: [String: String]) {
+        p.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/mslice-mcp")
+        guard FileManager.default.isExecutableFile(atPath: p.executableURL!.path) else { return nil }
+        p.environment = ProcessInfo.processInfo.environment.merging(env) { $1 }
+        p.standardInput = inp; p.standardOutput = outp; p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+    }
+    func stop() { try? inp.fileHandleForWriting.close(); p.terminate() }
+    func rpc(_ method: String, _ params: [String: Any]? = nil) async -> [String: Any]? {
+        nextID += 1; let id = nextID
+        var m: [String: Any] = ["jsonrpc": "2.0", "id": id, "method": method]; if let params { m["params"] = params }
+        guard var d = try? JSONSerialization.data(withJSONObject: m) else { return nil }
+        d.append(10); inp.fileHandleForWriting.write(d)
+        return await Task.detached { [self] in
+            while true {
+                if let i = buf.firstIndex(of: 10) {
+                    let line = buf[buf.startIndex ..< i]; buf.removeSubrange(buf.startIndex ... i)
+                    if let o = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any], (o["id"] as? Int) == id { return o }
+                    continue
+                }
+                let more = outp.fileHandleForReading.availableData
+                if more.isEmpty { return nil }
+                buf.append(more)
+            }
+        }.value
+    }
+    /// Appelle un outil ; renvoie (erreur, texte JSON décodé ou brut).
+    func tool(_ name: String, _ args: [String: Any]) async -> (error: Bool, json: [String: Any]?, text: String) {
+        guard let r = await rpc("tools/call", ["name": name, "arguments": args]), let res = r["result"] as? [String: Any] else { return (true, nil, "pas de réponse") }
+        let text = ((res["content"] as? [[String: Any]]) ?? []).compactMap { $0["text"] as? String }.joined(separator: "\n")
+        return ((res["isError"] as? Bool) ?? false, AgentJSON.parse(text), text)
+    }
+}
+
 /// Essais de l'interface sans fenêtre visible : chargement, lecture, touches I / O / ← → ↑ ↓ / espace simulées, export complet, captures.
 @MainActor
 enum UITest {
@@ -317,6 +355,41 @@ enum UITest {
                 check(sc.mismatches == 0, "images clés : début de groupe cohérent (\(sc.mismatches) écart) ; mémoire : \(sc.cacheSummary)")
                 sc.hide()
             }
+        }
+
+        // agent : `mslice-mcp` transmet les appels à l'appli ouverte par la prise locale (la timeline se met à jour en direct)
+        do {
+            let sock = FileManager.default.temporaryDirectory.appendingPathComponent("ms-\(UUID().uuidString.prefix(6)).sock").path
+            AgentServer.shared.stop(); setenv("MSLICE_AGENT_SOCKET", sock, 1); AgentServer.shared.start()
+            let prevEnabled = UserDefaults.standard.object(forKey: "agent.enabled"), prevFolder = model.opts.folder
+            defer { AgentServer.shared.stop(); unsetenv("MSLICE_AGENT_SOCKET"); if let p = prevEnabled { UserDefaults.standard.set(p, forKey: "agent.enabled") } else { UserDefaults.standard.removeObject(forKey: "agent.enabled") }; model.opts.folder = prevFolder }
+            model.opts.folder = out.path
+            UserDefaults.standard.set(false, forKey: "agent.enabled")
+            if let mcp = MCPProc(env: ["MSLICE_AGENT_SOCKET": sock]) {
+                _ = await mcp.rpc("initialize", ["protocolVersion": "2025-03-26", "capabilities": [String: Any](), "clientInfo": ["name": "essai-ui", "version": "1"]])
+                let off = await mcp.tool("get_state", [:])
+                check(off.error && off.text.contains("off"), "agent désactivé dans les préférences : appel refusé par l'appli")
+                UserDefaults.standard.set(true, forKey: "agent.enabled")
+                let st = await mcp.tool("get_state", [:])
+                check(!st.error && st.json?["app_open"] as? Bool == true && (st.json?["current_file"] as? String) == d.url.path, "pont : get_state voit l'appli ouverte et son fichier courant")
+                let set = await mcp.tool("set_segments", ["path": d.url.path, "segments": [["start": 100, "end": 130], ["start": "5:00", "end": "5:20", "name": "agent"]]])
+                check(!set.error && set.json?["live_in_app"] as? Bool == true && d.segments.count == 2 && d.segments.last?.name == "agent", "set_segments : la timeline de l'appli est mise à jour en direct (\(d.segments.count) morceaux)")
+                _ = await mcp.tool("seek", ["time": "2:30"])
+                await wait(0.3)
+                check(abs(model.player.time - 150) < 0.1, "seek : tête de lecture à \(Fmt.time(model.player.time))")
+                let seg = await mcp.tool("get_segments", ["path": d.url.path])
+                check(seg.json?["live_in_app"] as? Bool == true && seg.json?["count"] as? Int == 2, "get_segments : lus en direct")
+                let ex = await mcp.tool("export", ["path": d.url.path, "folder": out.path])
+                let created = (ex.json?["created"] as? [[String: Any]]) ?? []
+                check(!ex.error && created.count == 2 && created.allSatisfy { FileManager.default.fileExists(atPath: ($0["path"] as? String) ?? "") }, "export par l'agent : \(created.count) fichiers créés (copie directe)")
+                check(created.contains { ($0["path"] as? String)?.hasSuffix("/agent.mp4") == true }, "nom de morceau choisi par l'agent respecté (agent.mp4)")
+                let bad = await mcp.tool("export", ["path": d.url.path, "folder": "/tmp"])
+                check(bad.error && bad.text.contains("not allowed"), "dossier hors source refusé par l'appli")
+                check(model.toast?.contains("Agent") == true, "l'appli signale l'export de l'agent (\(model.toast ?? "—"))")
+                d.segments = []
+                mcp.stop()
+                for c in created { if let f = c["path"] as? String { try? FileManager.default.removeItem(atPath: f) } }      // le dossier d'essai ne garde que les exports de la suite
+            } else { check(false, "mslice-mcp introuvable dans le paquet") }
         }
 
         // positionnement précis

@@ -2,32 +2,6 @@
 import AppKit
 import SwiftUI
 
-enum Silence {
-    /// Début et fin à garder, d'après les silences d'ouverture et de fin du premier flux audio (seuil −40 dB, au moins 1 s), avec 0,25 s de marge.
-    static func detect(_ info: MediaInfo, margin: Double = 0.25) async -> (start: Double, end: Double)? {
-        guard let ffmpeg = Tools.ffmpeg, info.audio != nil else { return nil }
-        let text: String = await Task.detached(priority: .utility) {
-            let p = Process(); p.executableURL = ffmpeg
-            p.arguments = ["-nostdin", "-hide_banner", "-nostats", "-i", info.url.path, "-vn", "-map", "0:a:0", "-af", "silencedetect=noise=-40dB:d=1", "-f", "null", "-"]
-            let err = Pipe(); p.standardError = err; p.standardOutput = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
-            do { try p.run() } catch { return "" }
-            let d = err.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
-            return String(decoding: d, as: UTF8.self)
-        }.value
-        var starts: [Double] = [], ends: [Double] = []
-        for line in text.split(separator: "\n") {
-            if let r = line.range(of: "silence_start: ") { if let v = Double(line[r.upperBound...].split(separator: " ").first ?? "") { starts.append(v) } }
-            if let r = line.range(of: "silence_end: ") { if let v = Double(line[r.upperBound...].split(separator: " ").first ?? "") { ends.append(v) } }
-        }
-        var a = 0.0, b = info.duration
-        if let s0 = starts.first, s0 <= 0.15 { a = ends.first ?? info.duration }                    // silence dès le début
-        if let sl = starts.last, ends.count < starts.count || (ends.last ?? 0) >= info.duration - 0.15 { if sl > a { b = sl } }   // silence jusqu'à la fin
-        a = max(a - margin, 0); b = min(b + margin, info.duration)
-        guard b - a > 0.5, a > 0.01 || b < info.duration - 0.01 else { return nil }      // rien à retirer : aucun résultat
-        return (a, b)
-    }
-}
-
 @MainActor
 final class BatchModel: ObservableObject {
     let urls: [URL]

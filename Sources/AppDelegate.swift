@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = AppModel.shared
         if let t = arg("--theme"), let a = Appearance(rawValue: t) { a.apply() }
         buildMenu()
+        AgentServer.shared.start()                      // prise locale pour les agents (inactive tant que « Autoriser un agent » n'est pas coché)
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in MainActor.assumeIsolated { model.handleKey(e) ? nil : e } }
         UpdateEngine.shared.configure(repo: "mSLICE", lang: { L.lang == .fr ? "fr" : L.lang == .es ? "es" : L.lang == .it ? "it" : "en" }, brandName: "mSLICE")
         UpdateEngine.shared.autoInstall = { UserDefaults.standard.object(forKey: "autoUpdate") == nil || UserDefaults.standard.bool(forKey: "autoUpdate") }
@@ -78,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let w = window, !w.styleMask.contains(.fullScreen), !w.isZoomed else { return }
         WindowMemory.save(w.frame.size)
     }
-    func applicationWillTerminate(_ n: Notification) { saveWindowSize() }
+    func applicationWillTerminate(_ n: Notification) { saveWindowSize(); AgentServer.shared.stop() }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ app: NSApplication, hasVisibleWindows flag: Bool) -> Bool { if !flag { openMainWindow(show: true) }; return true }

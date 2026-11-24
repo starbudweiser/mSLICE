@@ -1,33 +1,6 @@
 // mSLICE — un fichier ouvert (morceaux, bistouri I / O, annulation, mémoire de session) et l'état général de l'appli.
 import AppKit
-import CryptoKit
 import SwiftUI
-
-/// Mémoire des morceaux de chaque fichier, restaurés à sa réouverture.
-enum SessionStore {
-    static var dir: URL {
-        if let t = ProcessInfo.processInfo.environment["MSLICE_SESSION_DIR"] { try? FileManager.default.createDirectory(atPath: t, withIntermediateDirectories: true); return URL(fileURLWithPath: t, isDirectory: true) }
-        let d = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/\(AppModel.isDev ? "mSLICE DEV" : "mSLICE")/sessions", isDirectory: true)
-        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-        return d
-    }
-    static func key(_ info: MediaInfo) -> String {
-        let mtime = (try? info.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
-        return SHA256.hash(data: Data("\(info.url.path)|\(info.size)|\(mtime)".utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
-    }
-    struct Session: Codable { var segments: [Segment] = []; var baseName: String?; var mergeName: String? }
-    static func load(_ info: MediaInfo) -> Session {
-        guard let d = try? Data(contentsOf: dir.appendingPathComponent(key(info) + ".json")) else { return Session() }
-        var s = (try? JSONDecoder().decode(Session.self, from: d)) ?? Session(segments: (try? JSONDecoder().decode([Segment].self, from: d)) ?? [])   // anciens fichiers : liste seule
-        s.segments = s.segments.filter { $0.end > $0.start && $0.start >= 0 && $0.end <= info.duration + 0.5 }
-        return s
-    }
-    static func save(_ info: MediaInfo, _ s: Session) {
-        let f = dir.appendingPathComponent(key(info) + ".json")
-        if s.segments.isEmpty && (s.baseName ?? "").isEmpty && (s.mergeName ?? "").isEmpty { try? FileManager.default.removeItem(at: f); return }
-        try? JSONEncoder().encode(s).write(to: f, options: .atomic)
-    }
-}
 
 @MainActor
 final class Doc: ObservableObject, Identifiable {
@@ -174,7 +147,7 @@ enum Sheet: Equatable { case none, export, done }
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
-    static let isDev = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
+    static let isDev = Env.isDev
     /// Lancé par un essai automatique (`--selftest-*`) : jamais de Finder qui s'ouvre, jamais de fichier mis à la corbeille.
     static let isSelfTest = CommandLine.arguments.contains { $0.hasPrefix("--selftest") }
 

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Construit mSLICE.app : ffmpeg / ffprobe embarqués (Contents/Helpers), extension Finder (PlugIns), signature locale stable, installation.
+# Construit mSLICE.app : ffmpeg / ffprobe embarqués (Contents/Helpers), serveur MCP mslice-mcp (Contents/MacOS), extension Finder (PlugIns), signature locale stable, installation.
 #   DEV=1        : édition de développement « mSLICE DEV.app » (bundle id …dev, données à part), dans le dossier du projet, non installée.
 #   NO_INSTALL=1 : ne pas installer.   UNIVERSAL=1 : arm64 + x86_64 (publication).   VERSION=x.y.z : version.
 set -euo pipefail
@@ -20,16 +20,21 @@ FF="$HOME/Library/Caches/mSLICE-ffmpeg/out/bin"
 rm -rf "${APP:?}" build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers" "$APP/Contents/PlugIns/FinderExt.appex/Contents/MacOS" build
 ARCHS=(arm64); [ -n "${UNIVERSAL:-}" ] && ARCHS=(arm64 x86_64)
+# noyau sans interface partagé avec le serveur MCP (mslice-mcp)
+CORE=(Sources/Tools.swift Sources/MediaInfo.swift Sources/Model.swift Sources/Exporter.swift Sources/L10n.swift Sources/L10nAgent.swift Sources/SessionStore.swift Sources/Silence.swift Sources/AgentCore.swift Sources/AgentBridge.swift)
 for arch in $ARCHS; do
   swiftc $OPT -swift-version 5 -target $arch-apple-macos14.0 -o build/mSLICE-$arch Sources/*.swift
   swiftc $OPT -swift-version 5 -target $arch-apple-macos14.0 -parse-as-library -application-extension -module-name FinderExt -framework FinderSync \
     -Xlinker -e -Xlinker _NSExtensionMain -o build/FinderExt-$arch FinderExt/*.swift
+  swiftc $OPT -swift-version 5 -target $arch-apple-macos14.0 -o build/mslice-mcp-$arch $CORE Sources/MCP/main.swift
 done
 if [ ${#ARCHS[@]} -gt 1 ]; then
   lipo -create build/mSLICE-arm64 build/mSLICE-x86_64 -output "$APP/Contents/MacOS/mSLICE"
   lipo -create build/FinderExt-arm64 build/FinderExt-x86_64 -output "$APP/Contents/PlugIns/FinderExt.appex/Contents/MacOS/FinderExt"
+  lipo -create build/mslice-mcp-arm64 build/mslice-mcp-x86_64 -output "$APP/Contents/MacOS/mslice-mcp"
 else
   cp build/mSLICE-arm64 "$APP/Contents/MacOS/mSLICE"; cp build/FinderExt-arm64 "$APP/Contents/PlugIns/FinderExt.appex/Contents/MacOS/FinderExt"
+  cp build/mslice-mcp-arm64 "$APP/Contents/MacOS/mslice-mcp"
 fi
 cp "$FF/ffmpeg" "$FF/ffprobe" "$APP/Contents/Helpers/"
 
