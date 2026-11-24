@@ -73,7 +73,7 @@ final class BatchModel: ObservableObject {
             if let e = run.error { notes.append("\(u.lastPathComponent) : \(e)") } else { results.append(contentsOf: run.results) }
         }
         overall = 1; running = false; finished = true
-        if !results.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(results) }
+        if !results.isEmpty, !AppModel.isSelfTest { NSWorkspace.shared.activateFileViewerSelecting(results) }
     }
 }
 

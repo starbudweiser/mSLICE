@@ -175,6 +175,8 @@ enum Sheet: Equatable { case none, export, done }
 final class AppModel: ObservableObject {
     static let shared = AppModel()
     static let isDev = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
+    /// Lancé par un essai automatique (`--selftest-*`) : jamais de Finder qui s'ouvre, jamais de fichier mis à la corbeille.
+    static let isSelfTest = CommandLine.arguments.contains { $0.hasPrefix("--selftest") }
 
     @Published var docs: [Doc] = []
     @Published var current: Doc?
@@ -254,8 +256,8 @@ final class AppModel: ObservableObject {
             if r.error == nil && !r.cancelled {
                 d?.exported = true
                 self.sheet = .done
-                if UserDefaults.standard.object(forKey: "revealAfter") == nil || UserDefaults.standard.bool(forKey: "revealAfter") { NSWorkspace.shared.activateFileViewerSelecting(r.results.prefix(1).map { $0 }) }
-                if UserDefaults.standard.bool(forKey: "trashAfter"), let url = d?.url { NSWorkspace.shared.recycle([url]) { _, _ in } }
+                if !AppModel.isSelfTest, UserDefaults.standard.object(forKey: "revealAfter") == nil || UserDefaults.standard.bool(forKey: "revealAfter") { NSWorkspace.shared.activateFileViewerSelecting(r.results.prefix(1).map { $0 }) }
+                if !AppModel.isSelfTest, UserDefaults.standard.bool(forKey: "trashAfter"), let url = d?.url { NSWorkspace.shared.recycle([url]) { _, _ in } }
             } else if r.cancelled { self.sheet = .none }
         }
     }
