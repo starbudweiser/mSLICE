@@ -68,8 +68,11 @@ enum PeakLoader {
 }
 
 /// Vignettes réparties à intervalles réguliers sur la durée.
+/// Fichier à images clés espacées (caméra, H.264 / HEVC) : un seul ffmpeg qui ne décode que les images clés (quelques secondes pour 30 min).
+/// Fichier tout en images clés (ProRes…) : recherches rapides en parallèle. Le résultat est gardé sur disque : la réouverture est instantanée.
 final class Filmstrip {
     static let w = 96, h = 54
+    static var frameBytes: Int { w * h * 3 }
     let count: Int
     let duration: Double
     private let lock = NSLock()
@@ -82,10 +85,68 @@ final class Filmstrip {
         images = Array(repeating: nil, count: count)
     }
     func image(_ i: Int) -> CGImage? { lock.lock(); defer { lock.unlock() }; return images.indices.contains(i) ? images[i] : nil }
-    fileprivate func set(_ i: Int, _ img: CGImage) { lock.lock(); images[i] = img; lock.unlock() }
+    fileprivate func set(_ i: Int, _ img: CGImage) { lock.lock(); if images.indices.contains(i) { images[i] = img }; lock.unlock() }
+    private var complete: Bool { lock.lock(); defer { lock.unlock() }; return !images.contains { $0 == nil } }
+    private func notify() { DispatchQueue.main.async { self.onChange?() } }
 
-    /// Une image par vignette, par recherche rapide (image clé la plus proche) ; quatre ffmpeg en parallèle.
-    func load(_ info: MediaInfo, cancel: CancelToken) async {
+    private static func cgImage(_ d: Data) -> CGImage? {
+        guard d.count >= frameBytes, let provider = CGDataProvider(data: d.prefix(frameBytes) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 24, bytesPerRow: w * 3, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
+    private func cacheURL(_ info: MediaInfo) -> URL {
+        let d = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Caches/mSLICE/film", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d.appendingPathComponent("\(SessionStore.key(info))-\(count).rgb")
+    }
+
+    func load(_ info: MediaInfo, keyframes: [Double], cancel: CancelToken) async {
+        guard Tools.ffmpeg != nil, info.video != nil else { return }
+        let cache = cacheURL(info)
+        if let d = try? Data(contentsOf: cache), d.count == count * Filmstrip.frameBytes {
+            for i in 0 ..< count { if let img = Filmstrip.cgImage(d.subdata(in: i * Filmstrip.frameBytes ..< (i + 1) * Filmstrip.frameBytes)) { set(i, img) } }
+            notify(); return
+        }
+        let dense = Double(keyframes.count) / max(info.duration, 1) > 1.5          // plus d'une image clé et demie par seconde
+        if dense { await seekPass(info, cancel) } else { await singlePass(info, cancel) }
+        if complete, !cancel.cancelled {
+            var all = Data()
+            for i in 0 ..< count { if let img = image(i), let d = img.dataProvider?.data { all.append(d as Data) } }
+            if all.count == count * Filmstrip.frameBytes { try? all.write(to: cache, options: .atomic) }
+        }
+    }
+
+    /// Un seul ffmpeg : seules les images clés sont décodées, puis ramenées à `count` images régulièrement espacées.
+    private func singlePass(_ info: MediaInfo, _ cancel: CancelToken) async {
+        guard let ffmpeg = Tools.ffmpeg, let v = info.video else { return }
+        let n = count, dur = info.duration
+        await Task.detached(priority: .utility) { [self] in
+            let vf = "fps=fps=\(String(format: "%.8f", Double(n) / dur)),scale=\(Filmstrip.w):\(Filmstrip.h):force_original_aspect_ratio=decrease,pad=\(Filmstrip.w):\(Filmstrip.h):(ow-iw)/2:(oh-ih)/2:black"
+            let p = Process(); p.executableURL = ffmpeg
+            p.arguments = ["-nostdin", "-v", "error", "-skip_frame", "nokey", "-i", info.url.path, "-map", "0:\(v.index)", "-an", "-sn", "-vf", vf, "-frames:v", String(n), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+            let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
+            do { try p.run() } catch { return }
+            cancel.attach(p)
+            let h = out.fileHandleForReading
+            var buf = Data(), i = 0, last = Date()
+            while i < n {
+                let d = h.readData(ofLength: Filmstrip.frameBytes)
+                if d.isEmpty { break }
+                buf.append(d)
+                while buf.count >= Filmstrip.frameBytes, i < n {
+                    if let img = Filmstrip.cgImage(buf) { set(i, img) }
+                    buf.removeFirst(Filmstrip.frameBytes); i += 1
+                }
+                if Date().timeIntervalSince(last) > 0.15 { last = Date(); notify() }
+            }
+            p.waitUntilExit()
+            if i > 0 && i < n, let lastImg = image(i - 1) { for k in i ..< n { set(k, lastImg) } }     // fin de fichier : on répète la dernière
+            notify()
+        }.value
+    }
+
+    /// Fichiers tout en images clés : une recherche rapide par vignette, huit ffmpeg en parallèle.
+    private func seekPass(_ info: MediaInfo, _ cancel: CancelToken) async {
         guard let ffmpeg = Tools.ffmpeg, let v = info.video else { return }
         let n = count, dur = info.duration
         await withTaskGroup(of: Void.self) { group in
@@ -98,14 +159,11 @@ final class Filmstrip {
                     let t = (Double(i) + 0.5) / Double(n) * dur
                     let vf = "scale=\(Filmstrip.w):\(Filmstrip.h):force_original_aspect_ratio=decrease,pad=\(Filmstrip.w):\(Filmstrip.h):(ow-iw)/2:(oh-ih)/2:black"
                     let args = ["-nostdin", "-v", "error", "-noaccurate_seek", "-ss", String(format: "%.3f", t), "-i", info.url.path, "-map", "0:\(v.index)", "-frames:v", "1", "-an", "-sn", "-vf", vf, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
-                    guard let d = Run.data(ffmpeg, args), d.count >= Filmstrip.w * Filmstrip.h * 3,
-                          let provider = CGDataProvider(data: d as CFData),
-                          let img = CGImage(width: Filmstrip.w, height: Filmstrip.h, bitsPerComponent: 8, bitsPerPixel: 24, bytesPerRow: Filmstrip.w * 3, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent) else { return }
-                    self.set(i, img)
-                    DispatchQueue.main.async { self.onChange?() }
+                    guard let d = Run.data(ffmpeg, args), let img = Filmstrip.cgImage(d) else { return }
+                    set(i, img); notify()
                 }
             }
-            for _ in 0 ..< 4 { spawn() }
+            for _ in 0 ..< 8 { spawn() }
             while await group.next() != nil { spawn() }
         }
     }

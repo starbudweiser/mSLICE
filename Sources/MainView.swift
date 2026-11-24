@@ -262,7 +262,7 @@ struct TransportBar: View {
 struct TimelineCard: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
-    @ObservedObject var player: PlayerModel
+    let player: PlayerModel          // pas observé : la tête de lecture est un calque qui se met à jour seul
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -412,9 +412,9 @@ struct ExportCard: View {
                 Button { chooseFolder() } label: { Text((model.opts.folder.map { ($0 as NSString).lastPathComponent } ?? L.t("export.sameFolder")) + " ▾").font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle) }.buttonStyle(.plain)
             }
             HStack(alignment: .firstTextBaseline) { Text(L.t("export.estSize")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer()
-                Text("≈ \(Fmt.size(est.bytes)) · −\(Fmt.size(max(info.size - est.bytes, 0)))").font(.system(size: 12, weight: .semibold).monospacedDigit()) }
+                Text(doc.segments.isEmpty ? "—" : "≈ \(Fmt.size(est.bytes)) · −\(Fmt.size(max(info.size - est.bytes, 0)))").font(.system(size: 12, weight: .semibold).monospacedDigit()) }
             HStack(alignment: .firstTextBaseline) { Text(L.t("export.estTime")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer()
-                Text("≈ " + (est.seconds < 60 ? "\(Int(est.seconds.rounded(.up))) s" : Fmt.time(est.seconds, decimals: false))).font(.system(size: 12, weight: .semibold).monospacedDigit()) }
+                Text(doc.segments.isEmpty ? "—" : "≈ " + (est.seconds < 60 ? "\(Int(est.seconds.rounded(.up))) s" : Fmt.time(est.seconds, decimals: false))).font(.system(size: 12, weight: .semibold).monospacedDigit()) }
         }
     }
     private var eff: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
@@ -428,13 +428,12 @@ struct ExportCard: View {
     private var names: some View {
         let outs = Planner.outputs(info: doc.info, segments: doc.segments, opts: eff, keyframes: doc.keyframes)
         return VStack(alignment: .leading, spacing: 3) {
-            if outs.isEmpty { Text(" ").font(.system(size: 11.5, design: .monospaced)) }
             ForEach(Array(outs.prefix(4).enumerated()), id: \.offset) { _, o in Text(o.url.lastPathComponent).font(.system(size: 11.5, design: .monospaced)).lineLimit(1).truncationMode(.middle) }
             if outs.count > 4 { Text("… +\(outs.count - 4)").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.text2) }
             if model.opts.merge { Text(L.t("export.mergeNote", doc.segments.count)).font(.system(size: 11)).foregroundStyle(Theme.text2) }
         }
-        .padding(.horizontal, 9).padding(.vertical, 7).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+        .padding(.horizontal, 9).padding(.vertical, outs.isEmpty ? 0 : 7).frame(maxWidth: .infinity, alignment: .leading)
+        .background(outs.isEmpty ? .clear : Theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
     }
     private func fmtChip(_ f: OutFormat) -> some View {
         let info = doc.info

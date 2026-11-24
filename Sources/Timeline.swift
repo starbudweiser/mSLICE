@@ -22,7 +22,7 @@ final class TimelineView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true; layerContentsRedrawPolicy = .onSetNeedsDisplay
+        wantsLayer = true; layerContentsRedrawPolicy = .duringViewResize; clipsToBounds = true
         playLayer.backgroundColor = Theme.playheadNS.cgColor; playLayer.zPosition = 10
         bubble.fontSize = 10.5; bubble.font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .semibold)
         bubble.alignmentMode = .center; bubble.foregroundColor = NSColor.white.cgColor
@@ -70,6 +70,12 @@ final class TimelineView: NSView {
     }
 
     override func layout() { super.layout(); if let p = player { setPlayhead(p.time) } }
+    /// Chaque changement de largeur redessine tout (règle, vignettes, onde, morceaux) : la timeline suit la fenêtre.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsDisplay = true; window?.invalidateCursorRects(for: self)
+        if let p = player { setPlayhead(p.time) }
+    }
 
     // MARK: Dessin
 
@@ -243,7 +249,7 @@ final class TimelineView: NSView {
         }
         let t = time(pt.x)
         if pt.y > TimelineView.rulerH, let s = d.segment(at: t) { d.selected = s.id }
-        scrubbing = true; p.pause(); p.seek(t)
+        scrubbing = true; p.pause(); p.seek(t, precise: false)
     }
 
     override func mouseDragged(with e: NSEvent) {
@@ -252,14 +258,18 @@ final class TimelineView: NSView {
         let t = min(max(time(pt.x), 0), d.duration)
         if let de = dragEdge {
             d.moveEdge(de.id, start: de.start, to: t, snap: snapEnabled())
-            if let s = d.segments.first(where: { $0.id == de.id }) { p.seek(de.start ? s.start : max(s.end - p.frameDuration, 0)) }
+            if let s = d.segments.first(where: { $0.id == de.id }) { p.seek(de.start ? s.start : max(s.end - p.frameDuration, 0), precise: false) }
         } else if scrubbing {
-            p.seek(t)
+            p.seek(t, precise: false)
             if pt.x < 0 || pt.x > bounds.width { d.viewStart += (pt.x < 0 ? -1 : 1) * d.viewSpan * 0.02; d.clampView() }
         }
     }
 
-    override func mouseUp(with e: NSEvent) { dragEdge = nil; scrubbing = false }
+    /// Pendant le glissement l'aperçu saute sur l'image clé voisine (instantané) ; au relâchement, positionnement exact à l'image.
+    override func mouseUp(with e: NSEvent) {
+        if scrubbing || dragEdge != nil, let p = player { p.seek(p.time, precise: true) }
+        dragEdge = nil; scrubbing = false
+    }
 
     override func scrollWheel(with e: NSEvent) {
         guard let d = doc else { return }

@@ -60,12 +60,13 @@ final class Doc: ObservableObject, Identifiable {
     }
 
     func loadBackground() {
+        let strip = self.strip, cancel = self.cancel
         Task.detached(priority: .utility) { [info] in
             let k = Probe.keyframes(info)
             await MainActor.run { self.keyframes = k }
+            await strip.load(info, keyframes: k, cancel: cancel)       // les vignettes dépendent de la densité des images clés
         }
         Task { await PeakLoader.load(info, into: peaks, cancel: cancel) }
-        Task { await strip.load(info, cancel: cancel) }
     }
 
     private func scheduleSave() {

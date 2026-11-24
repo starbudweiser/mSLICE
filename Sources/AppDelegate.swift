@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
-            w.minSize = NSSize(width: 1040, height: 700)
+            w.minSize = NSSize(width: 1180, height: 720)
             w.backgroundColor = Theme.bgNS
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: MainView(model: AppModel.shared).ignoresSafeArea())
@@ -201,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let w = window, let v = w.contentView else { exit(2) }
         let model = AppModel.shared
         let wait = Double(arg("--wait") ?? "") ?? 4
+        if let sz = arg("--size")?.split(separator: "x").compactMap({ Double($0) }), sz.count == 2 { w.setFrame(NSRect(x: 0, y: 0, width: sz[0], height: sz[1]), display: true) }
         DispatchQueue.main.asyncAfter(deadline: .now() + wait * 0.6) {
             if let d = model.current {
                 if let s = self.arg("--segments") {

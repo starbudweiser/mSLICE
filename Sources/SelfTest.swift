@@ -174,8 +174,28 @@ enum UITest {
         check(!d.keyframes.isEmpty, "images clés chargées : \(d.keyframes.count)")
         check(!d.peaks.isEmpty, "forme d'onde calculée : \(Fmt.time(d.peaks.duration)) déjà")
         check(model.player.player.currentItem?.status == .readyToPlay, "lecteur prêt (\(model.player.preparing ?? "fichier d'origine"))")
-        for _ in 0 ..< 100 { if (0 ..< d.strip.count).contains(where: { d.strip.image($0) != nil }) { break }; await wait(0.2) }
-        check((0 ..< d.strip.count).filter { d.strip.image($0) != nil }.count > 3, "vignettes : \((0 ..< d.strip.count).filter { d.strip.image($0) != nil }.count)/\(d.strip.count)")
+        let tFilm = Date()
+        for _ in 0 ..< 400 { if (0 ..< d.strip.count).allSatisfy({ d.strip.image($0) != nil }) { break }; await wait(0.1) }
+        let tiles = (0 ..< d.strip.count).filter { d.strip.image($0) != nil }.count
+        check(tiles == d.strip.count, "vignettes : \(tiles)/\(d.strip.count) en \(String(format: "%.1f", Date().timeIntervalSince(tFilm))) s (si le cache existe : instantané)")
+
+        // redimensionnement : la timeline suit la largeur de la fenêtre et reste dans sa carte
+        if let w = delegate.window {
+            func timelineView() -> TimelineView? {
+                func find(_ v: NSView) -> TimelineView? { if let t = v as? TimelineView { return t }; for c in v.subviews { if let t = find(c) { return t } }; return nil }
+                return w.contentView.flatMap(find)
+            }
+            for size in [NSSize(width: 1500, height: 820), NSSize(width: 1180, height: 720), NSSize(width: 1300, height: 760)] {
+                w.setFrame(NSRect(origin: .zero, size: size), display: true); w.contentView?.layoutSubtreeIfNeeded(); await wait(0.5)
+                if let t = timelineView() {
+                    let inWindow = t.convert(t.bounds, to: nil)
+                    check(inWindow.maxX <= size.width - Theme.rightWidth + 1 && abs(t.bounds.width - (size.width - Theme.sidebarWidth - Theme.rightWidth - 28 - 24)) < 4,
+                          "fenêtre \(Int(size.width))×\(Int(size.height)) : timeline \(Int(t.bounds.width)) px (attendu \(Int(size.width - Theme.sidebarWidth - Theme.rightWidth - 52))), bord droit à \(Int(inWindow.maxX))")
+                    if shots == "1" { delegate.snapshot(to: "build/ui-resize-\(Int(size.width)).png") }
+                } else { check(false, "timeline introuvable") }
+            }
+            w.setFrame(NSRect(origin: .zero, size: NSSize(width: 1200, height: 800)), display: true)
+        }
 
         // positionnement précis
         model.player.seek(15); await wait(0.6)

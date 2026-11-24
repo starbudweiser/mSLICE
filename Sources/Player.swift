@@ -15,7 +15,7 @@ final class PlayerModel: ObservableObject {
     private(set) var frameDuration: Double = 0.04
     private var observer: Any?
     private var chasing = false
-    private var pending: Double?
+    private var pending: (Double, Bool)?
     private var endObserver: NSObjectProtocol?
     private var loadToken = UUID()
 
@@ -98,16 +98,18 @@ final class PlayerModel: ObservableObject {
     // MARK: Commandes
 
     /// Se place sur un instant, à l'image près ; les demandes rapprochées (glissement) sont regroupées.
-    func seek(_ t: Double) {
+    /// `precise: false` (glissement sur la timeline) : l'aperçu se contente de l'image clé voisine, donc s'affiche tout de suite.
+    func seek(_ t: Double, precise: Bool = true) {
         let c = min(max(t, 0), duration)
-        time = c; pending = c
+        time = c; pending = (c, precise || (pending?.1 ?? false))
         if !chasing { chase() }
     }
 
     private func chase() {
-        guard let t = pending else { chasing = false; return }
+        guard let (t, precise) = pending else { chasing = false; return }
         chasing = true; pending = nil
-        player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+        let tol: CMTime = precise ? .zero : .positiveInfinity
+        player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: tol, toleranceAfter: tol) { [weak self] _ in
             Task { @MainActor in self?.chase() }
         }
     }
