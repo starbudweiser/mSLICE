@@ -59,25 +59,44 @@ enum Planner {
 
     // MARK: Plan
 
-    static func outputs(info: MediaInfo, segments: [Segment], opts: ExportOptions, keyframes: [Double], name: String? = nil) -> [OutputItem] {
+    /// Nom de fichier sûr : sans « / » ni « : », sans point initial, espaces de bord retirés.
+    static func sanitize(_ s: String) -> String {
+        var t = s.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+        while t.hasPrefix(".") { t.removeFirst() }
+        return String(t.prefix(200))
+    }
+
+    /// Fichiers à produire. `base` remplace le nom de l'original dans la numérotation ; `mergeName` nomme le fichier fusionné ;
+    /// le nom d'un morceau (`Segment.name`) prime sur tout. Un nom déjà pris (sur le disque ou dans ce lot) reçoit « _2 », « _3 »… : rien n'est écrasé.
+    static func outputs(info: MediaInfo, segments: [Segment], opts: ExportOptions, keyframes: [Double], name: String? = nil, base baseOverride: String? = nil, mergeName: String? = nil) -> [OutputItem] {
         let fmt = opts.resolvedFormat(for: info)
         let ext = fmt.ext(source: info.ext)
         let dir = destinationDir(info, opts)
-        let base = info.url.deletingPathExtension().lastPathComponent
+        let customBase = sanitize(baseOverride ?? "")
+        let base = customBase.isEmpty ? info.url.deletingPathExtension().lastPathComponent : customBase
         let videoOut = !fmt.isAudio && !info.isAudioOnly
         let segs = segments.sorted { $0.start < $1.start }.map { s -> Segment in
             var t = s; t.start = effectiveStart(s.start, keyframes: keyframes, passthrough: opts.passthrough, hasVideo: videoOut); return t
         }
         if opts.merge {
-            let u = uniqueURL(dir: dir, name: name ?? "\(base)_\(opts.suffix)", ext: ext)
+            let custom = sanitize(mergeName ?? "")
+            let u = uniqueURL(dir: dir, name: custom.isEmpty ? (name ?? "\(base)_\(opts.suffix)") : custom, ext: ext)
             return [OutputItem(url: u, segments: segs, expected: segs.reduce(0) { $0 + $1.duration })]
         }
+        let autoCount = segs.filter { sanitize($0.name ?? "").isEmpty }.count
         var n = nextIndex(dir: dir, base: base, ext: ext)
-        let width = max(opts.digits, String(n + segs.count - 1).count)
+        let width = max(opts.digits, String(n + max(autoCount, 1) - 1).count)
+        var used = Set<String>()
         return segs.map { s in
-            defer { n += 1 }
-            let u = dir.appendingPathComponent("\(base)_\(String(format: "%0\(width)d", n))").appendingPathExtension(ext)
-            return OutputItem(url: u, segments: [s], expected: s.duration)
+            let custom = sanitize(s.name ?? "")
+            var stem = custom
+            if custom.isEmpty { stem = "\(base)_\(String(format: "%0\(width)d", n))"; n += 1 }
+            var url = dir.appendingPathComponent(stem).appendingPathExtension(ext), k = 2
+            while FileManager.default.fileExists(atPath: url.path) || used.contains(url.lastPathComponent.lowercased()) {
+                url = dir.appendingPathComponent("\(stem)_\(k)").appendingPathExtension(ext); k += 1
+            }
+            used.insert(url.lastPathComponent.lowercased())
+            return OutputItem(url: url, segments: [s], expected: s.duration)
         }
     }
 

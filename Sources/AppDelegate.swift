@@ -208,6 +208,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     d.segments = s.split(separator: ",").compactMap { p in let ab = p.split(separator: "-").compactMap { Double($0) }; return ab.count == 2 ? Segment(start: ab[0], end: ab[1]) : nil }
                     d.selected = d.segments.dropFirst().first?.id ?? d.segments.first?.id
                 }
+                if let n = self.arg("--names") { for (i, nm) in n.split(separator: ",", omittingEmptySubsequences: false).enumerated() where d.segments.indices.contains(i) && !nm.isEmpty { d.segments[i].name = String(nm) } }
+                if let b = self.arg("--base") { d.baseName = b }
                 if let t = self.arg("--time").flatMap(Double.init) { model.player.seek(t) }
             }
             if self.arg("--state") == "shortcuts" { model.showShortcuts = true }

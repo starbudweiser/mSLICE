@@ -312,9 +312,13 @@ struct RightPanel: View {
     @ObservedObject var doc: Doc
     var body: some View {
         VStack(spacing: 10) {
-            PiecesCard(model: model, doc: doc)
-            ExportCard(model: model, doc: doc)
-            Spacer(minLength: 0)
+            // Les cartes défilent si la fenêtre est basse ou les morceaux nombreux ; le bouton « Extraire » reste en bas.
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 10) {
+                    PiecesCard(model: model, doc: doc)
+                    ExportCard(model: model, doc: doc)
+                }
+            }
             Button { model.exportNow() } label: {
                 Text(model.opts.merge ? L.t("export.go.merged") : L.t(doc.segments.count == 1 ? "export.go.one" : "export.go.n", doc.segments.count)).frame(maxWidth: .infinity)
             }.buttonStyle(FlatButton(kind: .sand, height: 42)).opacity(doc.segments.isEmpty ? 0.4 : 1).disabled(doc.segments.isEmpty)
@@ -327,7 +331,7 @@ struct PiecesCard: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
     var body: some View {
-        let outs = Planner.outputs(info: doc.info, segments: doc.segments, opts: effectiveOpts, keyframes: doc.keyframes)
+        let outs = Planner.outputs(info: doc.info, segments: doc.segments, opts: effectiveOpts, keyframes: doc.keyframes, base: doc.baseName, mergeName: doc.mergeName)
         let shifts = Planner.shifts(info: doc.info, segments: doc.segments, opts: effectiveOpts, keyframes: doc.keyframes)
         Card {
             HStack(alignment: .firstTextBaseline) {
@@ -425,15 +429,43 @@ struct ExportCard: View {
             else if model.opts.format == .same { model.opts.format = doc.info.isAudioOnly ? .m4a : .mp4 }
         })
     }
+    /// Noms des fichiers produits, modifiables : un nom de base commun, puis un nom propre à chaque morceau (ou celui du fichier fusionné).
     private var names: some View {
-        let outs = Planner.outputs(info: doc.info, segments: doc.segments, opts: eff, keyframes: doc.keyframes)
-        return VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(outs.prefix(4).enumerated()), id: \.offset) { _, o in Text(o.url.lastPathComponent).font(.system(size: 11.5, design: .monospaced)).lineLimit(1).truncationMode(.middle) }
-            if outs.count > 4 { Text("… +\(outs.count - 4)").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.text2) }
-            if model.opts.merge { Text(L.t("export.mergeNote", doc.segments.count)).font(.system(size: 11)).foregroundStyle(Theme.text2) }
+        let outs = Planner.outputs(info: doc.info, segments: doc.segments, opts: eff, keyframes: doc.keyframes, base: doc.baseName, mergeName: doc.mergeName)
+        let ext = outs.first?.url.pathExtension ?? eff.resolvedFormat(for: doc.info).ext(source: doc.info.ext)
+        let original = doc.info.url.deletingPathExtension().lastPathComponent
+        return VStack(alignment: .leading, spacing: 6) {
+            if !outs.isEmpty {
+                if model.opts.merge {
+                    nameField(placeholder: outs[0].url.deletingPathExtension().lastPathComponent, text: $doc.mergeName, ext: ext)
+                    Text(L.t("export.mergeNote", doc.segments.count)).font(.system(size: 11)).foregroundStyle(Theme.text2)
+                } else {
+                    HStack { Text(L.t("export.baseName")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer(minLength: 6) }
+                    nameField(placeholder: original, text: $doc.baseName, ext: nil)
+                    VStack(spacing: 4) {
+                        ForEach(Array(outs.enumerated()), id: \.offset) { i, o in
+                            nameField(placeholder: o.url.deletingPathExtension().lastPathComponent, text: pieceName(o.segments.first?.id), ext: ext)
+                        }
+                    }
+                }
+            }
         }
-        .padding(.horizontal, 9).padding(.vertical, outs.isEmpty ? 0 : 7).frame(maxWidth: .infinity, alignment: .leading)
-        .background(outs.isEmpty ? .clear : Theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+    }
+
+    private func pieceName(_ id: UUID?) -> Binding<String> {
+        Binding(get: { doc.segments.first { $0.id == id }?.name ?? "" },
+                set: { v in if let i = doc.segments.firstIndex(where: { $0.id == id }) { doc.segments[i].name = v.trimmingCharacters(in: .whitespaces).isEmpty ? nil : v } })
+    }
+
+    /// Champ de nom : le nom automatique s'affiche en gris tant que rien n'est saisi ; l'extension est fixe.
+    private func nameField(placeholder: String, text: Binding<String>, ext: String?) -> some View {
+        HStack(spacing: 2) {
+            TextField("", text: text, prompt: Text(placeholder).foregroundColor(Theme.text2)).textFieldStyle(.plain).focusEffectDisabled()
+                .font(.system(size: 11.5, design: .monospaced)).lineLimit(1)
+            if let ext { Text("." + ext).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.text2) }
+        }
+        .padding(.horizontal, 9).frame(height: 26).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
     }
     private func fmtChip(_ f: OutFormat) -> some View {
         let info = doc.info

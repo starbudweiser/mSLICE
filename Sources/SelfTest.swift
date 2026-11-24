@@ -135,6 +135,23 @@ enum EditorTest {
         // O seul : de la fin du morceau précédent jusqu'ici
         d.segments = []; d.markOut(at: 30)
         check(d.segments.count == 1 && d.segments[0].start == 0 && d.segments[0].end == 30, "O seul : morceau 0:00.0 → 0:30.0")
+        // noms personnalisés : un nom propre prime, la numérotation ne compte que les morceaux automatiques, un doublon reçoit _2
+        let tdir = FileManager.default.temporaryDirectory.appendingPathComponent("mslice-nametest-\(UUID().uuidString.prefix(6))")
+        try? FileManager.default.createDirectory(at: tdir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tdir) }
+        var no = ExportOptions(); no.folder = tdir.path
+        let named = [Segment(start: 1, end: 2, name: "Intro"), Segment(start: 3, end: 4), Segment(start: 5, end: 6, name: "Intro"), Segment(start: 7, end: 8), Segment(start: 9, end: 10, name: "a/b:c ")]
+        let names = Planner.outputs(info: info, segments: named, opts: no, keyframes: [], base: "Rush").map { $0.url.lastPathComponent }
+        check(names == ["Intro.\(info.ext)", "Rush_01.\(info.ext)", "Intro_2.\(info.ext)", "Rush_02.\(info.ext)", "a-b-c.\(info.ext)"], "noms : \(names)")
+        no.merge = true
+        let merged = Planner.outputs(info: info, segments: named, opts: no, keyframes: [], base: "Rush", mergeName: "Montage final").first?.url.lastPathComponent
+        check(merged == "Montage final.\(info.ext)", "fichier fusionné nommé : \(merged ?? "?")")
+        let autoMerged = Planner.outputs(info: info, segments: named, opts: no, keyframes: [], base: "Rush").first?.url.lastPathComponent
+        check(autoMerged == "Rush_extrait.\(info.ext)", "fichier fusionné automatique : \(autoMerged ?? "?")")
+        try? Data().write(to: tdir.appendingPathComponent("Rush_extrait.\(info.ext)"))
+        let again = Planner.outputs(info: info, segments: named, opts: no, keyframes: [], base: "Rush").first?.url.lastPathComponent
+        check(again == "Rush_extrait_2.\(info.ext)", "nom déjà pris : \(again ?? "?") (rien n'est écrasé)")
+
         // suppression
         d.deleteSelected()
         check(d.segments.isEmpty, "suppression du morceau sélectionné")

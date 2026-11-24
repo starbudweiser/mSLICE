@@ -96,6 +96,7 @@ enum L {
         "export.sameFolder": ["Même dossier que l'original", "Same folder as the original", "Misma carpeta que el original", "Stessa cartella dell'originale"],
         "export.estSize": ["Taille estimée", "Estimated size", "Tamaño estimado", "Dimensione stimata"],
         "export.estTime": ["Durée du traitement", "Processing time", "Duración del proceso", "Durata dell'elaborazione"],
+        "export.baseName": ["Noms des fichiers", "File names", "Nombres de los archivos", "Nomi dei file"],
         "export.mergeNote": ["%d morceaux assemblés bout à bout", "%d pieces joined end to end", "%d fragmentos unidos uno tras otro", "%d parti unite una dopo l'altra"],
         "export.go.n": ["Extraire %d morceaux", "Extract %d pieces", "Extraer %d fragmentos", "Estrai %d parti"],
         "export.go.one": ["Extraire 1 morceau", "Extract 1 piece", "Extraer 1 fragmento", "Estrai 1 parte"],

@@ -6,6 +6,7 @@ struct Segment: Identifiable, Equatable, Codable {
     var id = UUID()
     var start: Double
     var end: Double
+    var name: String? = nil          // nom du fichier exporté, choisi par l'utilisateur (sans extension) ; nil : nom automatique numéroté
     var duration: Double { end - start }
 }
 

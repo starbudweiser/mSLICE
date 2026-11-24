@@ -15,15 +15,17 @@ enum SessionStore {
         let mtime = (try? info.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
         return SHA256.hash(data: Data("\(info.url.path)|\(info.size)|\(mtime)".utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
     }
-    static func load(_ info: MediaInfo) -> [Segment] {
-        guard let d = try? Data(contentsOf: dir.appendingPathComponent(key(info) + ".json")),
-              let s = try? JSONDecoder().decode([Segment].self, from: d) else { return [] }
-        return s.filter { $0.end > $0.start && $0.start >= 0 && $0.end <= info.duration + 0.5 }
+    struct Session: Codable { var segments: [Segment] = []; var baseName: String?; var mergeName: String? }
+    static func load(_ info: MediaInfo) -> Session {
+        guard let d = try? Data(contentsOf: dir.appendingPathComponent(key(info) + ".json")) else { return Session() }
+        var s = (try? JSONDecoder().decode(Session.self, from: d)) ?? Session(segments: (try? JSONDecoder().decode([Segment].self, from: d)) ?? [])   // anciens fichiers : liste seule
+        s.segments = s.segments.filter { $0.end > $0.start && $0.start >= 0 && $0.end <= info.duration + 0.5 }
+        return s
     }
-    static func save(_ info: MediaInfo, _ segs: [Segment]) {
+    static func save(_ info: MediaInfo, _ s: Session) {
         let f = dir.appendingPathComponent(key(info) + ".json")
-        if segs.isEmpty { try? FileManager.default.removeItem(at: f); return }
-        try? JSONEncoder().encode(segs).write(to: f, options: .atomic)
+        if s.segments.isEmpty && (s.baseName ?? "").isEmpty && (s.mergeName ?? "").isEmpty { try? FileManager.default.removeItem(at: f); return }
+        try? JSONEncoder().encode(s).write(to: f, options: .atomic)
     }
 }
 
@@ -36,6 +38,8 @@ final class Doc: ObservableObject, Identifiable {
     @Published var segments: [Segment] = [] { didSet { scheduleSave(); onSegmentsChange?() } }
     @Published var selected: UUID?
     @Published var pendingIn: Double?
+    @Published var baseName = "" { didSet { scheduleSave() } }        // nom de base des fichiers exportés ; vide : nom de l'original
+    @Published var mergeName = "" { didSet { scheduleSave() } }       // nom du fichier fusionné ; vide : automatique
     @Published var exported = false
     @Published var viewStart = 0.0
     @Published var viewSpan: Double
@@ -55,7 +59,8 @@ final class Doc: ObservableObject, Identifiable {
     init(info: MediaInfo) {
         self.info = info; viewSpan = info.duration
         strip = Filmstrip(duration: info.duration)
-        segments = SessionStore.load(info)
+        let session = SessionStore.load(info)
+        segments = session.segments; baseName = session.baseName ?? ""; mergeName = session.mergeName ?? ""
         selected = segments.first?.id
     }
 
@@ -71,7 +76,7 @@ final class Doc: ObservableObject, Identifiable {
 
     private func scheduleSave() {
         saveWork?.cancel()
-        let w = DispatchWorkItem { [info, segments] in SessionStore.save(info, segments) }
+        let w = DispatchWorkItem { [info, segments, baseName, mergeName] in SessionStore.save(info, SessionStore.Session(segments: segments, baseName: baseName, mergeName: mergeName)) }
         saveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
     }
 
@@ -241,7 +246,7 @@ final class AppModel: ObservableObject {
         if o.passthrough, !Planner.canCopy(info: d.info, to: o.format) { flash(L.t("err.cantcopy")); return }
         if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
         if !o.passthrough, o.format == .same { o.format = d.info.isAudioOnly ? .m4a : .mp4 }
-        let outs = Planner.outputs(info: d.info, segments: d.segments, opts: o, keyframes: d.keyframes)
+        let outs = Planner.outputs(info: d.info, segments: d.segments, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: d.mergeName)
         let r = ExportRun(); run = r; sheet = .export
         player.pause()
         r.start(info: d.info, outputs: outs, opts: o, keyframes: d.keyframes) { [weak self, weak d] in
