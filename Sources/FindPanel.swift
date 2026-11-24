@@ -153,7 +153,7 @@ private struct ResultsView: View {
             VStack(spacing: 10) {
                 if let a = find.added { AddedCard(info: a, openEdit: openEdit) }
                 headerCard
-                CharactersCard()
+                if doc.info.video != nil { CharactersCard(find: find) }
                 if doc.info.video != nil { listCard(title: "find.scenes", rows: find.summary.scenes, all: $allScenes, sound: false) }
                 if doc.info.audio != nil { listCard(title: "find.sounds", rows: find.summary.sounds, all: $allSounds, sound: true) }
             }
@@ -221,36 +221,133 @@ private struct AddedCard: View {
     }
 }
 
-// MARK: - Modèle optionnel pour les personnages
+// MARK: - Personnages (modèle optionnel)
+
+private struct Avatar: View {
+    let row: CharacterRow
+    @ObservedObject var find: FindModel
+    @State private var image: NSImage?
+    @State private var hover = false
+    @State private var editing = false
+    @State private var draft = ""
+
+    private var selected: Bool { find.terms.contains { $0.kind == .person && $0.key == String(row.id) } }
+
+    var body: some View {
+        Button { find.add(find.personTerm(row.id)) } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    Circle().fill(Theme.ctl)
+                    if let image { Image(nsImage: image).resizable().scaledToFill() } else { Image(systemName: "person.fill").font(.system(size: 20)).foregroundStyle(Theme.text2) }
+                }
+                .frame(width: 54, height: 54).clipShape(Circle())
+                .overlay(Circle().stroke(selected ? Theme.accent : Theme.line, lineWidth: selected ? 2 : 1))
+                Text(row.title).font(.system(size: 11.5, weight: row.name == nil ? .medium : .semibold)).foregroundStyle(row.name == nil ? Theme.text2 : Theme.text)
+                    .lineLimit(1).minimumScaleFactor(0.8).truncationMode(.tail).frame(maxWidth: .infinity)
+                Text(L.t("find.chars.stat", row.appearances, Fmt.time(row.seconds, decimals: false))).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 6).padding(.horizontal, 2)
+            .background(hover || selected ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).onHover { hover = $0 }
+        .task(id: row.best) { image = await find.avatar(row.id) }
+        .contextMenu {
+            Button(L.t("find.chars.rename")) { draft = row.name ?? ""; editing = true }
+            Menu(L.t("find.chars.merge")) {
+                ForEach(find.characters.filter { $0.id != row.id }) { other in
+                    Button(other.title) {
+                        let (keep, drop) = row.seconds >= other.seconds ? (row.id, other.id) : (other.id, row.id)
+                        find.merge(drop, into: keep)
+                    }
+                }
+            }.disabled(find.characters.count < 2)
+            Button(L.t("find.chars.split")) { find.split(row.id) }.disabled(!find.canSplit(row.id))
+            Divider()
+            Button(L.t("find.chars.hide")) { find.hide(row.id) }
+        }
+        .popover(isPresented: $editing, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L.t("find.chars.name.title")).font(.system(size: 12, weight: .semibold))
+                TextField(L.t("find.chars.name.ph"), text: $draft).textFieldStyle(.roundedBorder).frame(width: 190).onSubmit(save)
+                HStack(spacing: 6) {
+                    Spacer(minLength: 0)
+                    Button(L.t("common.cancel")) { editing = false }.buttonStyle(FlatButton(height: 26))
+                    Button(L.t("find.chars.name.save"), action: save).buttonStyle(FlatButton(kind: .primary, height: 26))
+                }
+            }.padding(12)
+        }
+    }
+
+    private func save() { find.rename(row.id, to: draft); editing = false }
+}
 
 private struct CharactersCard: View {
+    @ObservedObject var find: FindModel
     @ObservedObject private var store = ModelStore.shared
     private let spec = ModelCatalog.characters
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6, alignment: .top), count: 3)
+
+    private var modelState: ModelStore.State { spec.available ? store.state(spec) : .notInstalled }
+
     var body: some View {
         Card(spacing: 8) {
             HStack(spacing: 8) {
-                SectionTitle(L.t("find.chars.title"))
+                SectionTitle(find.characters.isEmpty ? L.t("find.chars.title") : "\(L.t("find.chars.title")) · \(find.characters.count)")
                 Spacer(minLength: 4)
-                Tag(text: L.t("find.chars.tag"))
+                if find.faces == nil { Tag(text: L.t("find.chars.tag")) }
+                else if !find.recognizing, find.modelReady {
+                    Button { find.recognize() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.text2).frame(width: 22, height: 22) }
+                        .buttonStyle(.plain).help(L.t("find.chars.recognize.again"))
+                }
             }
-            Text(L.t("find.chars.body", spec.sizeMB)).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
-            switch spec.available ? store.state(spec) : .notInstalled {
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        if find.recognizing { running }
+        else if find.faces != nil {
+            if find.characters.isEmpty { note(L.t("find.chars.none")) }
+            else {
+                LazyVGrid(columns: columns, spacing: 4) { ForEach(find.characters.prefix(24)) { Avatar(row: $0, find: find) } }
+                note(L.t("find.chars.hint"))
+            }
+            if case .installed = modelState { installedRow }
+        } else {
+            switch modelState {
             case .installed:
-                HStack { Tag(text: L.t("find.chars.installed"), kind: .ok, symbol: "checkmark"); Spacer(); Button(L.t("find.chars.remove")) { store.remove(spec) }.buttonStyle(FlatButton(height: 26)) }
+                note(L.t("find.chars.ready"))
+                if find.recognizeFailed { Text(L.t("find.chars.rfailed")).font(.system(size: 11)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true) }
+                Button { find.recognize() } label: { Text(L.t("find.chars.recognize")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(kind: .primary, height: 28))
+                installedRow
             case .downloading(let p):
+                note(L.t("find.chars.body", spec.sizeMB))
                 HStack { Text(L.t("find.chars.downloading", Int(p * 100))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2); Spacer(); Button(L.t("common.cancel")) { store.cancel(spec) }.buttonStyle(FlatButton(height: 26)) }
             case .failed(let e):
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L.t("find.chars.failed", e)).font(.system(size: 11)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
-                    Button { store.install(spec) } label: { Text(L.t("find.retry")) }.buttonStyle(FlatButton(height: 26))
-                }
+                note(L.t("find.chars.body", spec.sizeMB))
+                Text(L.t("find.chars.failed", e)).font(.system(size: 11)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
+                Button { store.install(spec) } label: { Text(L.t("find.retry")) }.buttonStyle(FlatButton(height: 26))
             case .notInstalled:
-                if spec.available {
-                    Button { store.install(spec) } label: { Text(L.t("find.chars.download", spec.sizeMB)).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(height: 28))
-                } else {
-                    Text(L.t("find.chars.unavailable")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
-                }
+                note(L.t("find.chars.body", spec.sizeMB))
+                if spec.available { Button { store.install(spec) } label: { Text(L.t("find.chars.download", spec.sizeMB)).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(height: 28)) }
             }
+        }
+    }
+
+    private func note(_ s: String) -> some View { Text(s).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
+
+    private var installedRow: some View {
+        HStack { Tag(text: L.t("find.chars.installed"), kind: .ok, symbol: "checkmark"); Spacer(); Button(L.t("find.chars.remove")) { store.remove(spec) }.buttonStyle(FlatButton(height: 26)) }
+    }
+
+    private var running: some View {
+        let p = find.recognizeProgress
+        return VStack(spacing: 8) {
+            Text(L.t("find.chars.running", Int((p.fraction * 100).rounded()))).font(.system(size: 12.5, weight: .semibold)).frame(maxWidth: .infinity, alignment: .leading)
+            GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(Theme.ctl); Capsule().fill(Theme.accent).frame(width: g.size.width * min(max(p.fraction, 0), 1)) } }.frame(height: 6)
+            note(p.paused ? L.t("find.paused") : (find.recognizeRemaining.map { L.t("find.eta", duration($0)) } ?? L.t("find.working")))
+            Button { find.cancelRecognize() } label: { Text(L.t("common.cancel")).frame(minWidth: 116) }.buttonStyle(FlatButton()).frame(maxWidth: .infinity)
         }
     }
 }
@@ -259,14 +356,18 @@ private struct CharactersCard: View {
 
 private struct Pill: View {
     let term: FindTerm
+    var find: FindModel? = nil
     var remove: () -> Void
+    @State private var face: NSImage?
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: term.symbol).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.text2)
+            if term.kind == .person, let face { Image(nsImage: face).resizable().scaledToFill().frame(width: 18, height: 18).clipShape(Circle()).padding(.leading, -3) }
+            else { Image(systemName: term.symbol).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.text2) }
             Text(term.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
             Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.text2).frame(width: 16, height: 16) }.buttonStyle(.plain)
         }
         .padding(.leading, 9).padding(.trailing, 3).frame(height: 26).background(Theme.ctl, in: Capsule())
+        .task(id: term.key) { if term.kind == .person, let id = Int32(term.key) { face = await find?.avatar(id) } }
     }
 }
 
@@ -297,7 +398,7 @@ private struct SelectionView: View {
                             Button { find.flip(t) } label: { Text(L.t(t.exclude ? "find.except" : "find.and")).font(.system(size: 10.5, weight: .bold)).tracking(0.4).foregroundStyle(Theme.text2).padding(.horizontal, 3).frame(height: 26) }
                                 .buttonStyle(.plain).help(L.t("find.flip.help"))
                         }
-                        Pill(term: t) { find.remove(t) }
+                        Pill(term: t, find: find) { find.remove(t) }
                     }
                 }
                 addMenu
@@ -331,6 +432,8 @@ private struct SelectionView: View {
         let scenes = find.summary.scenes.filter { !taken.contains($0.term.token) }, sounds = find.summary.sounds.filter { !taken.contains($0.term.token) }
         if !scenes.isEmpty { Menu(L.t("find.scenes")) { ForEach(scenes) { r in Button(r.term.name) { var t = r.term; t.exclude = exclude; find.add(t) } } } }
         if !sounds.isEmpty { Menu(L.t("find.sounds")) { ForEach(sounds) { r in Button(r.term.name) { var t = r.term; t.exclude = exclude; find.add(t) } } } }
+        let people = find.characters.filter { !taken.contains(find.personTerm($0.id).token) }
+        if !people.isEmpty { Menu(L.t("find.chars.title")) { ForEach(people) { c in Button(c.title) { var t = find.personTerm(c.id); t.exclude = exclude; find.add(t) } } } }
     }
 
     private var passagesCard: some View {

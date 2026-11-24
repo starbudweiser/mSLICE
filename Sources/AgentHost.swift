@@ -25,6 +25,11 @@ final class AppAgentHost: AgentHost {
     func notify(_ text: String) { model.flash(text) }
     func userExportFolder() -> String? { model.opts.folder }
     func analyze(_ url: URL, force: Bool) async -> AnalysisIndex? { await doc(url)?.find.analyzeAndWait(force: force) }
+    func recognize(_ url: URL) async -> FaceIndex? { await doc(url)?.find.recognizeAndWait() }
+    func renameSubject(_ id: Int32, to name: String, of url: URL) -> Bool {
+        guard let d = doc(url), d.find.faces != nil else { return false }
+        d.find.rename(id, to: name); return true
+    }
 }
 
 /// Prise Unix locale : une ligne JSON par appel `{tool, args, client}`, une ligne de réponse `{content, isError}`.

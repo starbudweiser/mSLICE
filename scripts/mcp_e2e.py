@@ -20,7 +20,7 @@ prev_val = prev.stdout.strip() if prev.returncode == 0 else None
 
 work = tempfile.mkdtemp(prefix="mslice-e2e-")
 idxdir = os.path.join(work, "index")
-env = dict(os.environ, MSLICE_SESSION_DIR=os.path.join(work, "sessions"), MSLICE_AGENT_SOCKET=os.path.join(work, "none.sock"), MSLICE_INDEX_DIR=idxdir)
+env = dict(os.environ, MSLICE_SESSION_DIR=os.path.join(work, "sessions"), MSLICE_AGENT_SOCKET=os.path.join(work, "none.sock"), MSLICE_INDEX_DIR=idxdir, MSLICE_MODEL_DIR=os.path.join(work, "models"))
 proc = None
 try:
     # fixtures : 30 s de vidéo avec son (bip toutes les 5 s dans un silence), et un fichier audio « 4 s de silence, 4 s de son, 4 s de silence »
@@ -50,7 +50,7 @@ try:
     check(r["serverInfo"]["name"] == "mslice" and "tools" in r["capabilities"], "initialize : serveur « mslice »")
     rpc("notifications/initialized", notify=True)
     tools = [t["name"] for t in rpc("tools/list")["result"]["tools"]]
-    check(len(tools) >= 19 and "export" in tools and "get_frame" in tools and "analyze_media" in tools and "find_scenes" in tools, f"tools/list : {len(tools)} outils")
+    check(len(tools) >= 21 and "list_subjects" in tools and "name_subject" in tools and "export" in tools and "get_frame" in tools and "analyze_media" in tools and "find_scenes" in tools, f"tools/list : {len(tools)} outils")
 
     err, txt, _ = call("get_state")
     check(err and "off" in str(txt), "désactivé par défaut : l'agent est refusé avec une explication")
@@ -214,6 +214,68 @@ try:
     check(proc.poll() is None, "find_scenes : seuil NaN sans plantage")
     err, t, _ = call("find_scenes", path=vid, include=["scene:fire"], min_length=1e30, whole_shots=False)
     check(not err and proc.poll() is None and t["passages_found"] == 0, "find_scenes : durée minimale géante bornée (aucun passage, pas de plantage)")
+    # ---- personnages : index de visages synthétique ; dossier de modèles vide, donc le modèle optionnel n'est pas installé ----
+    err, t, _ = call("list_subjects", path=vid)
+    check(err and "analyze_media" in str(t), "list_subjects sans reconnaissance : erreur qui dit quoi faire")
+    err, an5, _ = call("analyze_media", path=vid, characters=True)
+    check(not err and an5.get("characters", {}).get("status") == "model_not_installed" and an5["analyzed_now"] is False, "analyze_media characters=true sans modèle : indiqué clairement, aucun téléchargement, l'analyse reste valable")
+    err, t, _ = call("find_scenes", path=vid, include=["person:0"])
+    check(err and "recognis" in str(t).lower(), "find_scenes person: sans reconnaissance : erreur claire")
+    faces_file = os.path.join(idxdir, vid_idx.replace(".msidx", ".msfaces"))
+    def make_faces(names=None):
+        # groupe 0 : visages aux secondes 4-7 (suivi 0) et 9-12 (suivi 1) ; groupe 1 : secondes 16-19 (suivi 2)
+        rows = [(float(s), 0, 0 if s < 8 else 1) for s in (4, 5, 6, 7, 9, 10, 11, 12)] + [(float(s), 1, 2) for s in (16, 17, 18, 19)]
+        n = len(rows); names = names or {}
+        emb = b"".join(bytes([100 if k == g else 0 for k in range(512)]) for _, g, _ in rows)
+        keys = sorted(names)
+        return {"version": 1, "duration": dur, "created": datetime.datetime.now(), "seconds": 1.0, "modelSHA": "2c1d331d88b4b7544a5835b810e6ca7203fcfc7d04b0be614787b4012331277b", "step": 1.0,
+                "t": struct.pack("<%df" % n, *[r[0] for r in rows]), "box": struct.pack("<%df" % (4 * n), *([0.4, 0.3, 0.2, 0.3] * n)), "px": struct.pack("<%df" % n, *([120.0] * n)),
+                "track": struct.pack("<%di" % n, *[r[2] for r in rows]), "group": struct.pack("<%di" % n, *[r[1] for r in rows]), "emb": emb, "embScale": struct.pack("<%df" % n, *([0.01] * n)),
+                "nameKeys": struct.pack("<%di" % len(keys), *keys), "nameValues": [names[k] for k in keys], "hidden": b"", "nextGroup": 2}
+    def write_faces(d):
+        with open(faces_file, "wb") as fh: plistlib.dump(d, fh, fmt=plistlib.FMT_BINARY)
+    def read_faces():
+        with open(faces_file, "rb") as fh: return plistlib.load(fh)
+    write_faces(make_faces())
+    err, ls, _ = call("list_subjects", path=vid)
+    s0 = ls["subjects"][0] if not err and ls.get("subjects") else {}
+    check(not err and len(ls["subjects"]) == 2 and s0.get("id") == "person:0" and s0.get("named") is False and abs(s0.get("seconds", 0) - 8) < 0.1 and s0.get("appearances") == 1 and abs(ls["subjects"][1]["seconds"] - 4) < 0.1, f"list_subjects : deux personnages, le plus présent d'abord ({s0})")
+    err, fs, _ = call("find_scenes", path=vid, include=["person:0"], whole_shots=False)
+    check(not err and fs["passages_kept"] == 1 and abs(fs["passages"][0]["start"] - 3.2) < 0.05 and abs(fs["passages"][0]["end"] - 12.8) < 0.05, f"find_scenes person:0 : visages réunis (trou de 1 s comblé) {fs['passages'][0] if not err else fs}")
+    err, fs, _ = call("find_scenes", path=vid, include=["person:0"])
+    check(not err and fs["passages"][0]["start"] == 0 and fs["passages"][0]["end"] == 15, "find_scenes person:0 en plans entiers : calé sur les coupures")
+    err, fs, _ = call("find_scenes", path=vid, include=["person:0", "scene:fire"], whole_shots=False)
+    check(not err and fs["passages_kept"] == 1 and abs(fs["passages"][0]["start"] - 9.7) < 0.05 and abs(fs["passages"][0]["end"] - 12.8) < 0.05, "find_scenes personnage ET feu : intersection")
+    err, fs, _ = call("find_scenes", path=vid, include=["scene:people"], exclude=["person:1"], whole_shots=False)
+    check(not err and fs["passages"][0].get("excluded_by") and fs["passages_kept"] == 0, f"find_scenes personnes SAUF un personnage : le passage qui le contient est écarté et signalé ({fs['passages'][0] if not err else fs})")
+    err, nm, _ = call("name_subject", path=vid, subject="person:0", name="Hero")
+    check(not err and nm.get("id") == "person:0" and nm.get("name") == "Hero" and "Hero" in read_faces()["nameValues"], "name_subject : nom enregistré dans le fichier des visages")
+    err, ls, _ = call("list_subjects", path=vid)
+    check(not err and ls["subjects"][0]["name"] == "Hero" and ls["subjects"][0]["named"] is True, "list_subjects : le nom est repris")
+    err, fs, _ = call("find_scenes", path=vid, include=["person:hero"], whole_shots=False)
+    check(not err and fs["include"] == ["person:0"] and fs["passages_kept"] == 1, "find_scenes : un personnage se désigne aussi par son nom (sans tenir compte des majuscules)")
+    err, nm, _ = call("name_subject", path=vid, subject="Hero", name="Hé\nro\u0007" + "x" * 80)
+    check(not err and "\n" not in nm["name"] and "\u0007" not in nm["name"] and len(nm["name"]) <= 40, "name_subject : caractères de contrôle retirés, 40 caractères au plus")
+    err, t, _ = call("name_subject", path=vid, subject="person:9", name="Fantôme")
+    check(err and "person:" in str(t), "name_subject : personnage inconnu, erreur qui liste ceux qui existent")
+    err, nm, _ = call("name_subject", path=vid, subject="person:0", name="")
+    check(not err and nm.get("named") is False and not read_faces()["nameValues"], "name_subject : nom vide, le personnage redevient anonyme")
+    call("name_subject", path=vid, subject="person:0", name="Twin"); call("name_subject", path=vid, subject="person:1", name="Twin")
+    err, t, _ = call("find_scenes", path=vid, include=["person:twin"])
+    check(err and "ambiguous" in str(t).lower(), "find_scenes : deux personnages de même nom, ambiguïté signalée")
+    err, t, _ = call("find_scenes", path=vid, include=["person:" + "x" * 5000])
+    check(err and proc.poll() is None, "find_scenes : nom de personnage géant, erreur propre")
+    err, t, _ = call("find_scenes", path=aud, include=["person:0"])
+    check(err and proc.poll() is None, "find_scenes : critère personnage sur un fichier audio refusé")
+    raw = open(faces_file, "rb").read()
+    with open(faces_file, "wb") as fh: fh.write(raw[:len(raw) // 2])
+    err, t, _ = call("list_subjects", path=vid)
+    check(err and proc.poll() is None, "fichier des visages tronqué : traité comme absent, serveur vivant")
+    bad = make_faces(); bad["group"] = struct.pack("<12i", *([99] * 12))
+    write_faces(bad)
+    err, t, _ = call("list_subjects", path=vid)
+    check(err and proc.poll() is None, "fichier des visages incohérent (groupe hors table) : refusé")
+    os.remove(faces_file)
     check(all(f.endswith((".mp4", ".mp3", ".wav")) for f in os.listdir(work) if os.path.isfile(os.path.join(work, f))), "analyse : aucun fichier ajouté hors dossier d'index")
     check(os.path.exists(cuts) and os.path.exists(vid), "analyse : originaux intacts")
 finally:

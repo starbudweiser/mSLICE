@@ -14,7 +14,8 @@ enum AnalysisTest {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("mslice-analysis-\(UUID().uuidString.prefix(6))")
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         setenv("MSLICE_INDEX_DIR", tmp.path, 1)
-        defer { try? FileManager.default.removeItem(at: tmp); unsetenv("MSLICE_INDEX_DIR") }
+        setenv("MSLICE_MODEL_DIR", tmp.appendingPathComponent("models").path, 1)
+        defer { try? FileManager.default.removeItem(at: tmp); unsetenv("MSLICE_INDEX_DIR"); unsetenv("MSLICE_MODEL_DIR") }
 
         // 1. vocabulaires : chaque étiquette citée par une famille existe dans macOS ; chaque famille est traduite ; chaque pictogramme existe
         let visionVocab = Set((try? VNClassifyImageRequest().supportedIdentifiers()) ?? [])
@@ -191,6 +192,8 @@ enum AnalysisTest {
             var payload = Data(count: 700_000); payload.withUnsafeMutableBytes { raw in for i in 0 ..< raw.count { raw[i] = UInt8(truncatingIfNeeded: i &* 31 &+ (i >> 8)) } }
             try? payload.write(to: serve.appendingPathComponent("model.bin"))
             let sha = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+            let realZip = ProcessInfo.processInfo.environment["MSLICE_TEST_MODEL_ZIP"].flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+            if let realZip { try? FileManager.default.copyItem(atPath: realZip, toPath: serve.appendingPathComponent("real.zip").path) }
             let port = 47_500 + Int.random(in: 0 ..< 400)
             let py = Process(); py.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
             py.arguments = ["-m", "http.server", "\(port)", "--bind", "127.0.0.1", "--directory", serve.path]
@@ -202,31 +205,219 @@ enum AnalysisTest {
                 let store = ModelStore.shared
                 func wait(_ spec: ModelSpec) async -> ModelStore.State { for _ in 0 ..< 100 { if case .downloading = store.state(spec) { try? await Task.sleep(nanoseconds: 100_000_000) } else { break } }; return store.state(spec) }
                 let ok = ModelSpec(id: "test-ok-\(UUID().uuidString.prefix(5))", sizeMB: 1, url: url, sha256: sha, license: "test")
-                check(!ModelStore.isInstalled(ok) && store.state(ok) == .notInstalled, "modèle optionnel : absent au départ")
+                check(!ModelFiles.isInstalled(ok) && store.state(ok) == .notInstalled, "modèle optionnel : absent au départ")
                 store.install(ok)
                 let st = await wait(ok)
-                check(st == .installed && (try? Data(contentsOf: ModelStore.file(ok))) == payload && ModelStore.isInstalled(ok), "modèle optionnel : téléchargé, empreinte vérifiée, installé (\(st))")
+                check(st == .installed && (try? Data(contentsOf: ModelFiles.file(ok))) == payload && ModelFiles.isInstalled(ok), "modèle optionnel : téléchargé, empreinte vérifiée, installé (\(st))")
                 let bad = ModelSpec(id: "test-bad-\(UUID().uuidString.prefix(5))", sizeMB: 1, url: url, sha256: String(repeating: "0", count: 64), license: "test")
                 store.install(bad)
                 let stBad = await wait(bad)
-                check({ if case .failed = stBad { return true }; return false }() && !FileManager.default.fileExists(atPath: ModelStore.folder(bad).path), "modèle optionnel : mauvaise empreinte refusée, rien d'installé (\(stBad))")
+                check({ if case .failed = stBad { return true }; return false }() && !FileManager.default.fileExists(atPath: ModelFiles.folder(bad).path), "modèle optionnel : mauvaise empreinte refusée, rien d'installé (\(stBad))")
                 let big = ModelSpec(id: "test-big-\(UUID().uuidString.prefix(5))", sizeMB: 0, url: url, sha256: sha, license: "test")
                 store.install(big)
                 let stBig = await wait(big)
-                check({ if case .failed = stBig { return true }; return false }() && !FileManager.default.fileExists(atPath: ModelStore.folder(big).path), "modèle optionnel : fichier plus gros que annoncé refusé (\(stBig))")
-                check(ModelStore.verified(ok), "modèle optionnel : empreinte recalculée conforme avant usage")
-                var tamper = (try? Data(contentsOf: ModelStore.file(ok))) ?? Data(); if !tamper.isEmpty { tamper[0] ^= 0xff }
-                try? tamper.write(to: ModelStore.file(ok))
-                check(ModelStore.isInstalled(ok) && !ModelStore.verified(ok), "modèle optionnel : fichier modifié après installation (même taille) détecté par l'empreinte")
-                try? Data("tronqué".utf8).write(to: ModelStore.file(ok))
-                check(!ModelStore.isInstalled(ok), "modèle optionnel : fichier tronqué : non installé")
+                check({ if case .failed = stBig { return true }; return false }() && !FileManager.default.fileExists(atPath: ModelFiles.folder(big).path), "modèle optionnel : fichier plus gros que annoncé refusé (\(stBig))")
+                check(ModelFiles.verified(ok), "modèle optionnel : empreinte recalculée conforme avant usage")
+                var tamper = (try? Data(contentsOf: ModelFiles.file(ok))) ?? Data(); if !tamper.isEmpty { tamper[0] ^= 0xff }
+                try? tamper.write(to: ModelFiles.file(ok))
+                check(ModelFiles.isInstalled(ok) && !ModelFiles.verified(ok), "modèle optionnel : fichier modifié après installation (même taille) détecté par l'empreinte")
+                try? Data("tronqué".utf8).write(to: ModelFiles.file(ok))
+                check(!ModelFiles.isInstalled(ok), "modèle optionnel : fichier tronqué : non installé")
                 store.remove(ok)
-                check(!FileManager.default.fileExists(atPath: ModelStore.folder(ok).path) && store.state(ok) == .notInstalled, "modèle optionnel : supprimé")
+                check(!FileManager.default.fileExists(atPath: ModelFiles.folder(ok).path) && store.state(ok) == .notInstalled, "modèle optionnel : supprimé")
                 for s in [bad, big] { store.remove(s) }
+
+                // archive Core ML : le vrai modèle des personnages (si MSLICE_TEST_MODEL_ZIP donne le zip) est installé puis vérifié
+                if realZip != nil, let zsha = try? ModelFiles.hash(of: serve.appendingPathComponent("real.zip")) {
+                    let real = ModelSpec(id: "test-real-\(UUID().uuidString.prefix(5))", sizeMB: 60, url: URL(string: "http://127.0.0.1:\(port)/real.zip")!, sha256: zsha, license: "test", kind: .coreMLArchive)
+                    let t0 = Date()
+                    store.install(real)
+                    for _ in 0 ..< 1200 { if case .downloading = store.state(real) { try? await Task.sleep(nanoseconds: 100_000_000) } else { break } }
+                    let sr = store.state(real)
+                    check(sr == .installed && ModelFiles.isInstalled(real) && ModelFiles.verified(real), "archive Core ML : téléchargée, décompressée, compilée, installée en \(f1(Date().timeIntervalSince(t0))) s (\(sr))")
+                    let fm = FileManager.default
+                    check(fm.fileExists(atPath: ModelFiles.compiled(real).path) && fm.fileExists(atPath: ModelFiles.folder(real).appendingPathComponent("LICENSE.txt").path) && fm.fileExists(atPath: ModelFiles.folder(real).appendingPathComponent("NOTICE.txt").path) && !fm.fileExists(atPath: ModelFiles.folder(real).appendingPathComponent("payload").path), "archive Core ML : modèle compilé, licence et notice gardés, rien d'autre")
+                    let weights = ModelFiles.compiled(real).appendingPathComponent("weights/weight.bin")
+                    if var w = try? Data(contentsOf: weights), !w.isEmpty {
+                        w[w.count / 2] ^= 0xff; try? w.write(to: weights)
+                        check(ModelFiles.isInstalled(real) && !ModelFiles.verified(real), "archive Core ML : poids modifiés après installation détectés avant usage")
+                    } else { check(false, "archive Core ML : fichier de poids introuvable") }
+                    store.remove(real)
+                    check(!fm.fileExists(atPath: ModelFiles.folder(real).path), "archive Core ML : supprimée")
+                } else { print("INFO   archive Core ML réelle non essayée (MSLICE_TEST_MODEL_ZIP absent)") }
             } else { check(false, "serveur local de l'essai (python3)") }
-            check(ModelStore.allowed(URL(string: "https://example.com/m.bin")!) && ModelStore.allowed(URL(string: "http://127.0.0.1:1/m")!) && !ModelStore.allowed(URL(string: "http://example.com/m.bin")!) && !ModelStore.allowed(URL(string: "ftp://example.com/m")!) && !ModelStore.allowed(URL(string: "file:///etc/passwd")!), "modèle optionnel : HTTPS seulement (HTTP uniquement vers ce Mac)")
-            check(!ModelCatalog.characters.available && ModelStore.shared.state(ModelCatalog.characters) == .notInstalled, "modèle des personnages : pas encore retenu, aucun téléchargement proposé")
+
+            // archives hostiles : refusées avant toute extraction, rien n'est écrit hors du dossier de travail
+            let hostile = tmp.appendingPathComponent("hostile"); try? FileManager.default.createDirectory(at: hostile, withIntermediateDirectories: true)
+            let absName = "/tmp/mslice-evil-\(UUID().uuidString.prefix(8)).txt"
+            let mk = Process(); mk.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            mk.arguments = ["-I", "-c", """
+import sys, zipfile
+d, a = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(d + '/evil-path.zip', 'w') as z: z.writestr('../mslice-evil-parent.txt', 'x')
+with zipfile.ZipFile(d + '/abs-path.zip', 'w') as z: z.writestr(a, 'x')
+with zipfile.ZipFile(d + '/link.zip', 'w') as z:
+    i = zipfile.ZipInfo('link'); i.external_attr = 0o120777 << 16; z.writestr(i, '/etc/passwd')
+with zipfile.ZipFile(d + '/ok.zip', 'w') as z: z.writestr('a.txt', 'x')
+""", hostile.path, absName]
+            mk.standardOutput = FileHandle.nullDevice; mk.standardError = FileHandle.nullDevice
+            if (try? mk.run()) != nil {
+                mk.waitUntilExit()
+                for (name, label) in [("evil-path.zip", "chemin avec « .. »"), ("abs-path.zip", "chemin absolu"), ("link.zip", "lien symbolique")] {
+                    var threw = false
+                    do { try ModelStore.extract(zip: hostile.appendingPathComponent(name), into: hostile.appendingPathComponent("out-" + name)) } catch { threw = true }
+                    check(threw, "archive de modèle : \(label) refusé")
+                }
+                check(!FileManager.default.fileExists(atPath: absName) && !FileManager.default.fileExists(atPath: tmp.appendingPathComponent("mslice-evil-parent.txt").path), "archive de modèle : rien écrit hors du dossier de travail")
+                var fine = false
+                do { try ModelStore.extract(zip: hostile.appendingPathComponent("ok.zip"), into: hostile.appendingPathComponent("out-ok")); fine = FileManager.default.fileExists(atPath: hostile.appendingPathComponent("out-ok/a.txt").path) } catch {}
+                check(fine, "archive de modèle : archive saine décompressée (contrôle)")
+            } else { check(false, "fabrication des archives hostiles (python3)") }
+            check(ModelFiles.allowed(URL(string: "https://example.com/m.bin")!) && ModelFiles.allowed(URL(string: "http://127.0.0.1:1/m")!) && !ModelFiles.allowed(URL(string: "http://example.com/m.bin")!) && !ModelFiles.allowed(URL(string: "ftp://example.com/m")!) && !ModelFiles.allowed(URL(string: "file:///etc/passwd")!), "modèle optionnel : HTTPS seulement (HTTP uniquement vers ce Mac)")
+            let cat = ModelCatalog.characters
+            check(cat.available && cat.kind == .coreMLArchive && cat.url.map(ModelFiles.allowed) == true && cat.url?.scheme == "https" && cat.sha256?.count == 64 && cat.sha256 == cat.sha256?.lowercased() && cat.sizeMB > 0, "modèle des personnages : catalogue renseigné (HTTPS, SHA-256, archive Core ML, \(cat.sizeMB) Mo)")
         }
+
+        // 10. personnages : index des visages, suivis, regroupement, corrections, requêtes (données synthétiques à vérité connue)
+        do {
+            struct Rng: RandomNumberGenerator { var s: UInt64; mutating func next() -> UInt64 { s &+= 0x9E3779B97F4A7C15; var z = s; z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9; z = (z ^ (z >> 27)) &* 0x94D049BB133111EB; return z ^ (z >> 31) } }
+            var rng = Rng(s: 42)
+            func gauss() -> Float { let u1 = Float.random(in: 1e-6 ..< 1, using: &rng), u2 = Float.random(in: 0 ..< 1, using: &rng); return (-2 * logf(u1)).squareRoot() * cosf(2 * .pi * u2) }
+            func unit(_ v: [Float]) -> [Float] { let n = v.reduce(0) { $0 + $1 * $1 }.squareRoot(); return v.map { $0 / n } }
+            func noise() -> [Float] { unit((0 ..< FaceIndex.dim).map { _ in gauss() }) }
+            let centers = (0 ..< 3).map { _ in noise() }
+            let twinCenter = unit(zip(centers[0], noise()).map { $0 + 0.25 * $1 })        // presque la même personne que la 0, mais dans les mêmes images
+            // (instant, vérité) : 0 et son sosie aux secondes 2-7 et 32-36 ; 1 aux secondes 12-17 et 42-46 ; 2 aux secondes 22-27 et 52-56
+            var rows: [(Double, Int)] = []
+            for s in [2, 3, 4, 5, 6, 7, 32, 33, 34, 35, 36] { rows.append((Double(s), 0)); rows.append((Double(s), 3)) }
+            for s in [12, 13, 14, 15, 16, 17, 42, 43, 44, 45, 46] { rows.append((Double(s), 1)) }
+            for s in [22, 23, 24, 25, 26, 27, 52, 53, 54, 55, 56] { rows.append((Double(s), 2)) }
+            rows.sort { ($0.0, $0.1) < ($1.0, $1.1) }
+            rows.append((60, 4))                                                      // un visage isolé
+            var f = FaceIndex(duration: 70)
+            f.modelSHA = ModelCatalog.characters.sha256 ?? ""
+            for (k, r) in rows.enumerated() {
+                let c = r.1 < 3 ? centers[r.1] : (r.1 == 3 ? twinCenter : noise())
+                let v = unit(zip(c, noise()).map { $0 + 0.5 * $1 })
+                let q = FaceIndex.quantize(v)
+                f.t.append(Float(r.0)); f.px.append(120); f.emb += q.q; f.embScale.append(q.scale)
+                let x: Float = r.1 == 3 ? 0.65 : 0.2 + 0.002 * Float(k % 20)
+                f.box += [x, 0.3, 0.15, 0.25]
+            }
+            let truth = rows.map(\.1)
+            let cuts: [Double] = [10, 20, 30, 40, 50, 58]
+            f.track = FaceClustering.tracks(f, cuts: cuts)
+            f.group = FaceClustering.cluster(f)
+            f.nextGroup = (f.group.max() ?? -1) + 1
+            let groups = Dictionary(grouping: (0 ..< f.count).filter { f.group[$0] >= 0 }, by: { f.group[$0] })
+            let pure = groups.values.allSatisfy { Set($0.map { truth[$0] }).count == 1 }
+            check(groups.count == 4 && pure && groups.values.allSatisfy { $0.count == 11 }, "personnages : 4 groupes de 11 visages, chacun d'une seule personne, sosie séparé grâce à la contrainte d'image (\(groups.count) groupes, purs : \(pure))")
+            check(f.group.last == -1, "personnages : un visage isolé n'est pas un personnage")
+            check(Set(f.track).count <= 12 && f.track[0] == f.track[2], "suivis : les visages voisins d'un même plan sont réunis (\(Set(f.track).count) suivis)")
+            var mini = FaceIndex(duration: 20)
+            for s in [9.0, 10.0] { let q = FaceIndex.quantize(centers[0]); mini.t.append(Float(s)); mini.px.append(100); mini.emb += q.q; mini.embScale.append(q.scale); mini.box += [0.2, 0.3, 0.15, 0.25] }
+            check(FaceClustering.tracks(mini, cuts: []) == [0, 0] && FaceClustering.tracks(mini, cuts: [10]) == [0, 1], "suivis : une coupure entre deux images sépare les suivis")
+            let q0 = FaceIndex.quantize(centers[1]); var restored = f; restored.emb = q0.q + Array(f.emb.dropFirst(FaceIndex.dim)); restored.embScale[0] = q0.scale
+            let cosQ = zip(restored.vector(0), centers[1]).reduce(0) { $0 + $1.0 * $1.1 }
+            check(cosQ > 0.999, "empreintes : quantification sur 8 bits sans perte sensible (cosinus \(String(format: "%.5f", cosQ)))")
+
+            let stats = f.characters()
+            check(stats.count == 4 && stats.allSatisfy { $0.appearances == 2 && abs($0.seconds - 11) < 0.01 }, "personnages : 4, chacun apparaît 11 s en 2 passages \(stats.map { "\($0.id):\(f1($0.seconds))" })")
+            let g0 = f.group[0], g1 = f.group[truth.firstIndex(of: 1)!]
+            // requêtes : le Finder comprend « person: »
+            var base = AnalysisIndex(duration: 70); base.hasVideo = true; base.cuts = cuts
+            base.sceneOffsets = [0] + [Int32](repeating: 0, count: 140)
+            let fnd = Finder(base, faces: f)
+            var pq = FindQuery(terms: [FindTerm(kind: .person, key: String(g1))]); pq.wholeShots = false
+            let pr = fnd.run(pq)
+            check(pr.passages.count == 2 && abs(pr.passages[0].start - 11.2) < 0.01 && abs(pr.passages[0].end - 17.8) < 0.01 && abs(pr.passages[1].start - 41.2) < 0.01, "requête personnage : deux passages (marge 0,3 s) \(pr.passages.map { "\(f1($0.start))→\(f1($0.end))" })")
+            pq.wholeShots = true
+            let pw = fnd.run(pq)
+            check(pw.passages.count == 2 && pw.passages[0].start == 10 && pw.passages[0].end == 20 && pw.passages[1].start == 40 && pw.passages[1].end == 50, "requête personnage en plans entiers : calée sur les coupures \(pw.passages.map { "\(f1($0.start))→\(f1($0.end))" })")
+            var xq = FindQuery(terms: [FindTerm(kind: .person, key: String(g1)), FindTerm(kind: .person, key: String(g0), exclude: true)]); xq.wholeShots = false
+            check(fnd.run(xq).passages.count == 2 && fnd.knows(FindTerm(kind: .person, key: String(g1))) && !fnd.knows(FindTerm(kind: .person, key: "99")), "requête personnage SAUF un autre : sans recouvrement, rien d'écarté ; personnage inconnu signalé")
+            check(FindTerm.parse("person:3")?.token == "person:3" && FindTerm.parse("person:x") == nil && FindTerm.parse("person:-1") == nil, "critère person: 1 entier positif, rien d'autre")
+
+            // corrections : nom, fusion, séparation, écart
+            var e = f
+            e.rename(g0, to: "A\nB\u{7}" + String(repeating: "x", count: 60))
+            check(e.names[g0].map { !$0.contains("\n") && !$0.contains("\u{7}") && $0.count == 40 } == true, "nom : caractères de contrôle retirés, 40 caractères au plus")
+            e.rename(g0, to: "  "); check(e.names[g0] == nil, "nom vide : le personnage redevient anonyme")
+            e.rename(g1, to: "Alice")
+            e.merge(g1, into: g0)
+            check(e.names[g0] == "Alice" && e.names[g1] == nil && e.characters().count == 3 && e.characters().first?.faces == 22, "fusion : visages réunis, nom gardé")
+            let moved = e.split(g0)
+            let sets = Dictionary(grouping: (0 ..< e.count).filter { e.group[$0] == g0 || e.group[$0] == moved }, by: { e.group[$0] })
+            check(moved != nil && sets.values.allSatisfy { Set($0.map { truth[$0] }).count == 1 } && sets.count == 2, "séparation : la fusion malheureuse se défait selon les personnes")
+            var single = FaceIndex(duration: 10); let sq = FaceIndex.quantize(centers[2])
+            for s in 0 ..< 4 { single.t.append(Float(s)); single.px.append(90); single.emb += sq.q; single.embScale.append(sq.scale); single.box += [0.2, 0.3, 0.15, 0.25] }
+            single.track = [Int32](repeating: 0, count: 4); single.group = [Int32](repeating: 0, count: 4); single.nextGroup = 1
+            check(single.split(0) == nil, "séparation : un seul suivi, rien à séparer")
+            e.hide(g0); check(!e.characters().contains { $0.id == g0 } && !Finder(base, faces: e).knows(FindTerm(kind: .person, key: String(g0))), "personnage écarté : disparu de la liste et des requêtes")
+
+            // sérialisation
+            if let d = f.serialized(), let back = FaceIndex(serialized: d) {
+                check(back.t == f.t && back.group == f.group && back.track == f.track && back.emb == f.emb && back.box == f.box && back.modelSHA == f.modelSHA, "index des visages : aller-retour sans perte (\(d.count) octets pour \(f.count) visages)")
+                var cut = d; cut.removeLast(60)
+                check(FaceIndex(serialized: cut) == nil && FaceIndex(serialized: Data("rien".utf8)) == nil, "index des visages tronqué ou illisible : refusé")
+                var bad = f; bad.group[3] = 500
+                check(bad.serialized().flatMap { FaceIndex(serialized: $0) } == nil, "index des visages incohérent (groupe hors table) : refusé")
+                var bad2 = f; bad2.box[1] = .nan
+                check(bad2.serialized().flatMap { FaceIndex(serialized: $0) } == nil, "index des visages avec une valeur non finie : refusé")
+                var bad3 = f; bad3.t.swapAt(0, 20)
+                check(bad3.serialized().flatMap { FaceIndex(serialized: $0) } == nil, "index des visages dont les instants ne sont pas triés : refusé")
+            } else { check(false, "index des visages : sérialisation") }
+        }
+
+        // 11. reconnaissance réelle des personnages (le zip du modèle est donné par MSLICE_TEST_MODEL_ZIP ; installé dans un dossier d'essai)
+        if let zipPath = ProcessInfo.processInfo.environment["MSLICE_TEST_MODEL_ZIP"], FileManager.default.fileExists(atPath: zipPath) {
+            let spec = ModelCatalog.characters
+            let copy = tmp.appendingPathComponent("model-copy.zip")
+            try? FileManager.default.copyItem(atPath: zipPath, toPath: copy.path)
+            do { try await ModelStore.installFile(copy, spec: spec, sha256: spec.sha256 ?? "") } catch { print("INFO   installation du modèle réel : \(error)") }
+            check(ModelFiles.verified(spec), "modèle des personnages : installé et vérifié dans le dossier d'essai")
+            AnalysisStore.save(index, for: info)                     // les coupures servent aux suivis
+            FaceStore.remove(info)
+            let before = ProcessMemory.footprintMB()
+            let faceBox = PeakBox()
+            let t0 = Date()
+            let faces = await AnalysisRunner.runFaces(info, job: AnalysisJob(), progress: { faceBox.note($0.memoryMB, $0) })
+            let secs = Date().timeIntervalSince(t0)
+            if let faces {
+                let chars = faces.characters()
+                let grouped = faces.group.filter { $0 >= 0 }.count
+                print("INFO   personnages : \(faces.count) visages, \(grouped) rattachés à \(chars.count) personnages, \(faces.track.max().map { Int($0) + 1 } ?? 0) suivis, calcul interne \(f1(faces.seconds)) s")
+                for c in chars.prefix(8) { print("INFO     personnage \(c.id + 1) : \(c.faces) visages, \(f1(c.seconds)) s, \(c.appearances) apparitions") }
+                check(secs < 180, "reconnaissance des personnages : \(f1(secs)) s pour \(Fmt.time(info.duration, decimals: false)) de vidéo (critère 180 s)")
+                check(faceBox.peak < 300, "reconnaissance des personnages : pic de mémoire du processus \(f1(faceBox.peak)) Mo, modèle chargé compris (critère 300 Mo ; rendus à la fin du processus)")
+                check(chars.count >= 10 && grouped * 2 > faces.count, "reconnaissance des personnages : \(chars.count) personnages (au moins 10), \(grouped) visages sur \(faces.count) rattachés")
+                var clash = 0
+                for (_, idx) in Dictionary(grouping: (0 ..< faces.count).filter { faces.group[$0] >= 0 }, by: { faces.group[$0] }) { clash += idx.count - Set(idx.map { faces.t[$0] }).count }
+                check(clash == 0, "reconnaissance des personnages : jamais deux visages d'une même image dans un personnage (\(clash) conflit(s))")
+                check(FaceStore.load(info)?.group == faces.group && FaceStore.load(info)?.modelSHA == spec.sha256, "reconnaissance des personnages : résultat enregistré, lié au modèle")
+                let after = ProcessMemory.footprintMB()
+                check(after < before + 8, "reconnaissance des personnages : l'appli ne garde rien (mémoire \(f1(before)) → \(f1(after)) Mo)")
+                var ren = faces; ren.rename(chars[0].id, to: "Essai")
+                FaceStore.save(ren, for: info)
+                check(FaceStore.load(info)?.names[chars[0].id] == "Essai", "personnages : nom donné relu depuis le disque")
+            } else { check(false, "reconnaissance des personnages : échec") }
+            // annulation en cours de route : rien n'est enregistré
+            FaceStore.remove(info)
+            let cj = AnalysisJob()
+            let run = Task { await AnalysisRunner.runFaces(info, job: cj, progress: { _ in }) }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            let tc = Date(); cj.cancel(); let cancelled = await run.value
+            check(cancelled == nil && Date().timeIntervalSince(tc) < 6 && FaceStore.load(info) == nil, "reconnaissance des personnages : annulation en \(f1(Date().timeIntervalSince(tc))) s, rien d'enregistré")
+            // un modèle altéré n'est jamais chargé
+            let weights = ModelFiles.compiled(spec).appendingPathComponent("weights/weight.bin")
+            if var w = try? Data(contentsOf: weights), !w.isEmpty {
+                w[w.count / 3] ^= 0xff; try? w.write(to: weights)
+                let bad = await AnalysisRunner.runFaces(info, job: AnalysisJob(), progress: { _ in })
+                check(bad == nil && FaceStore.load(info) == nil && !ModelFiles.verified(spec), "modèle altéré : refusé avant chargement, aucune reconnaissance")
+            }
+            try? FileManager.default.removeItem(at: ModelFiles.folder(spec))
+            FaceStore.remove(info); AnalysisStore.remove(info)
+        } else { print("INFO   reconnaissance réelle des personnages non essayée (MSLICE_TEST_MODEL_ZIP absent)") }
 
         print(failures == 0 ? "TOUT EST OK" : "\(failures) échec(s)")
         return failures == 0 ? 0 : 1

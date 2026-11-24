@@ -11,6 +11,17 @@ struct AddedInfo: Equatable { var count: Int; var seconds: Double }
 
 struct FindSummary { var scenes: [SummaryRow] = [], sounds: [SummaryRow] = [] }
 
+/// Un personnage reconnu, tel que le panneau l'affiche.
+struct CharacterRow: Identifiable, Equatable {
+    var id: Int32
+    var name: String?
+    var faces: Int
+    var seconds: Double
+    var appearances: Int
+    var best: Int
+    var title: String { name ?? L.t("find.chars.unnamed", Int(id) + 1) }
+}
+
 @MainActor
 final class FindModel: ObservableObject {
     unowned let doc: Doc
@@ -30,16 +41,27 @@ final class FindModel: ObservableObject {
     private var finder: Finder?
     private var job: AnalysisJob?
 
+    // Personnages (modèle optionnel) : index des visages, reconnaissance à la demande, corrections de l'utilisateur
+    @Published private(set) var faces: FaceIndex?
+    @Published private(set) var characters: [CharacterRow] = []
+    @Published private(set) var recognizing = false
+    @Published private(set) var recognizeFailed = false
+    @Published private(set) var recognizeProgress = AnalysisProgress()
+    @Published private(set) var recognizeStarted = Date()
+    private var faceJob: AnalysisJob?
+    private static let saveQueue = DispatchQueue(label: "fr.stephan.mslice.faces.save", qos: .utility)
+
     init(doc: Doc) {
         self.doc = doc
         if let i = AnalysisStore.load(doc.info) { setIndex(i) }
+        if let f = FaceStore.load(doc.info) { setFaces(f, keepTerms: true) }
     }
 
     var hasIndex: Bool { index != nil }
 
     private func setIndex(_ i: AnalysisIndex) {
         index = i
-        let f = Finder(i)
+        let f = Finder(i, faces: faces)
         finder = f
         summary = FindSummary(scenes: f.summary().scenes, sounds: f.summary().sounds)
         wholeShots = i.hasVideo
@@ -78,6 +100,94 @@ final class FindModel: ObservableObject {
         guard running, f > 0.05, !progress.paused else { return nil }
         return Date().timeIntervalSince(startedAt) * (1 - f) / f
     }
+
+    // MARK: Personnages
+
+    var modelReady: Bool { ModelFiles.isInstalled(ModelCatalog.characters) }
+
+    /// Reconnaissance des personnages : même principe que l'analyse (processus séparé, annulable, en pause pendant la lecture et l'export).
+    func recognize() {
+        guard !recognizing, !running, doc.info.video != nil, modelReady else { return }
+        recognizing = true; recognizeFailed = false; recognizeStarted = Date()
+        recognizeProgress = AnalysisProgress(hasVideo: true, hasAudio: false)
+        let job = AnalysisJob(); faceJob = job
+        let info = doc.info
+        Task { [weak self] in
+            let f = await AnalysisRunner.runFaces(info, job: job) { p in Task { @MainActor [weak self] in if self?.recognizing == true { self?.recognizeProgress = p } } }
+            guard let self else { return }
+            self.recognizing = false; self.faceJob = nil
+            if let f { self.setFaces(f, keepTerms: false) } else if !job.cancelled { self.recognizeFailed = true }
+        }
+    }
+
+    func cancelRecognize() { faceJob?.cancel() }
+
+    /// Pour les agents : reconnaît les personnages (ou attend la reconnaissance en cours) et rend l'index des visages ; nil si le modèle n'est pas installé.
+    func recognizeAndWait() async -> FaceIndex? {
+        if !recognizing, faces == nil { recognize() }
+        while recognizing { try? await Task.sleep(nanoseconds: 200_000_000) }
+        return faces
+    }
+
+    var recognizeRemaining: Double? {
+        let f = recognizeProgress.fraction
+        guard recognizing, f > 0.05, !recognizeProgress.paused else { return nil }
+        return Date().timeIntervalSince(recognizeStarted) * (1 - f) / f
+    }
+
+    private func refreshCharacters() {
+        guard let f = faces else { characters = []; return }
+        characters = f.characters().map { CharacterRow(id: $0.id, name: f.names[$0.id], faces: $0.faces, seconds: $0.seconds, appearances: $0.appearances, best: $0.best) }
+    }
+
+    private func setFaces(_ f: FaceIndex, keepTerms: Bool) {
+        faces = f
+        refreshCharacters()
+        if let idx = index { finder = Finder(idx, faces: f) }
+        if !keepTerms { terms.removeAll { $0.kind == .person } }
+        recompute()
+    }
+
+    /// Applique une correction de l'utilisateur, l'enregistre (en tâche de fond) et met à jour les critères qui citent des personnages.
+    private func editFaces(remap: [Int32: Int32] = [:], _ change: (inout FaceIndex) -> Void) {
+        guard var f = faces else { return }
+        change(&f)
+        faces = f; refreshCharacters()
+        if let idx = index { finder = Finder(idx, faces: f) }
+        var next: [FindTerm] = []
+        for var term in terms {
+            if term.kind == .person, var g = Int32(term.key) {
+                g = remap[g] ?? g
+                guard !f.hidden.contains(g), f.group.contains(g) else { continue }
+                term.key = String(g); term.label = f.names[g]
+            }
+            if !next.contains(where: { $0.token == term.token }) { next.append(term) }
+        }
+        let same = next == terms
+        terms = next
+        if same { recompute() }
+        let info = doc.info
+        Self.saveQueue.async { FaceStore.save(f, for: info) }
+    }
+
+    func rename(_ id: Int32, to name: String) { editFaces { $0.rename(id, to: name) } }
+    func merge(_ from: Int32, into: Int32) { editFaces(remap: [from: into]) { $0.merge(from, into: into) } }
+    func hide(_ id: Int32) { editFaces { $0.hide(id) } }
+    /// Sépare un personnage en deux ; faux s'il n'a qu'un seul suivi (rien à séparer).
+    @discardableResult func split(_ id: Int32) -> Bool { var done = false; editFaces { done = $0.split(id) != nil }; return done }
+    func canSplit(_ id: Int32) -> Bool {
+        guard let f = faces else { return false }
+        return Set((0 ..< f.count).filter { f.group[$0] == id }.map { f.track[$0] }).count >= 2
+    }
+
+    /// Vignette du plus beau visage d'un personnage.
+    func avatar(_ id: Int32) async -> NSImage? {
+        guard let f = faces, let row = characters.first(where: { $0.id == id }), row.best < f.count else { return nil }
+        let b = row.best
+        return await thumbs.face(at: Double(f.t[b]), box: Array(f.box[4 * b ..< 4 * b + 4]), key: Int(id) &* 1_000_003 &+ b, of: doc.info)
+    }
+
+    func personTerm(_ id: Int32) -> FindTerm { FindTerm(kind: .person, key: String(id), exclude: false, label: faces?.names[id]) }
 
     // MARK: Critères
 
@@ -140,7 +250,44 @@ final class ThumbStore {
     private var generator: AVAssetImageGenerator?
     private var preparing: Task<Void, Never>?
     private let cache = NSCache<NSNumber, NSImage>()
-    init() { cache.countLimit = 160 }
+    private let faceCache = NSCache<NSNumber, NSImage>()
+    private var faceGenerator: AVAssetImageGenerator?
+    private var facePreparing: Task<Void, Never>?
+    init() { cache.countLimit = 160; faceCache.countLimit = 64 }
+
+    /// Vignette ronde d'un personnage : le visage (boîte normalisée, origine en haut à gauche) recadré en carré avec de la marge, à 112 px.
+    func face(at t: Double, box: [Float], key: Int, of info: MediaInfo) async -> NSImage? {
+        let k = NSNumber(value: key)
+        if let c = faceCache.object(forKey: k) { return c }
+        guard box.count == 4 else { return nil }
+        if faceGenerator == nil {
+            if facePreparing == nil {
+                facePreparing = Task { @MainActor in
+                    let url = await Proxies.playableURL(info)
+                    let g = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+                    g.appliesPreferredTrackTransform = true
+                    g.maximumSize = CGSize(width: 1280, height: 720)
+                    g.requestedTimeToleranceBefore = CMTime(seconds: 0.2, preferredTimescale: 600); g.requestedTimeToleranceAfter = CMTime(seconds: 0.2, preferredTimescale: 600)
+                    self.faceGenerator = g
+                }
+            }
+            await facePreparing?.value
+        }
+        guard let g = faceGenerator, let cg = try? await g.image(at: CMTime(seconds: t, preferredTimescale: 600)).image else { return nil }
+        let W = CGFloat(cg.width), H = CGFloat(cg.height)
+        let bw = CGFloat(box[2]) * W, bh = CGFloat(box[3]) * H
+        let side = min(max(bw, bh) * 1.7, min(W, H))
+        var x = (CGFloat(box[0]) + CGFloat(box[2]) / 2) * W - side / 2, y = (CGFloat(box[1]) + CGFloat(box[3]) / 2) * H - side / 2
+        x = min(max(x, 0), W - side); y = min(max(y, 0), H - side)
+        guard side >= 8, let crop = cg.cropping(to: CGRect(x: x, y: y, width: side, height: side)),
+              let ctx = CGContext(data: nil, width: 112, height: 112, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(crop, in: CGRect(x: 0, y: 0, width: 112, height: 112))
+        guard let small = ctx.makeImage() else { return nil }
+        let img = NSImage(cgImage: small, size: NSSize(width: 54, height: 54))
+        faceCache.setObject(img, forKey: k)
+        return img
+    }
 
     func image(_ t: Double, of info: MediaInfo) async -> NSImage? {
         let key = NSNumber(value: Int((t * 10).rounded()))
@@ -164,5 +311,8 @@ final class ThumbStore {
         return img
     }
 
-    func reset() { generator?.cancelAllCGImageGeneration(); generator = nil; preparing = nil; cache.removeAllObjects() }
+    func reset() {
+        generator?.cancelAllCGImageGeneration(); generator = nil; preparing = nil; cache.removeAllObjects()
+        faceGenerator?.cancelAllCGImageGeneration(); faceGenerator = nil; facePreparing = nil; faceCache.removeAllObjects()
+    }
 }

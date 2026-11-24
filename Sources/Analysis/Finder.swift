@@ -7,16 +7,18 @@
 import Foundation
 
 struct FindTerm: Hashable, Sendable {
-    enum Kind: String, Sendable { case scene, sound, sceneLabel = "label", soundLabel = "sound_label" }
+    enum Kind: String, Sendable { case scene, sound, sceneLabel = "label", soundLabel = "sound_label", person }
     var kind: Kind
     var key: String
     var exclude = false
+    var label: String? = nil            // nom affiché d'un personnage (le nom peut changer sans que le critère change)
 
     var name: String {
         switch kind {
         case .scene: return L.t("scene." + key)
         case .sound: return L.t("sound." + key)
         case .sceneLabel, .soundLabel: return key.replacingOccurrences(of: "_", with: " ")
+        case .person: return label ?? L.t("find.chars.unnamed", (Int(key) ?? 0) + 1)
         }
     }
     var isSound: Bool { kind == .sound || kind == .soundLabel }
@@ -26,15 +28,17 @@ struct FindTerm: Hashable, Sendable {
         case .sound: return SoundFamilies.byID[key]?.symbol ?? "circle.dashed"
         case .sceneLabel: return "photo"
         case .soundLabel: return "waveform"
+        case .person: return "person.crop.circle"
         }
     }
-    /// « scene:fire », « sound:laugh », « label:fireworks », « sound_label:gunshot_gunfire ».
+    /// « scene:fire », « sound:laugh », « label:fireworks », « sound_label:gunshot_gunfire », « person:3 » (personnage numéro 3).
     var token: String { kind.rawValue + ":" + key }
     var identity: String { token + (exclude ? "!" : "") }
 
     static func parse(_ s: String, exclude: Bool = false) -> FindTerm? {
         let p = s.split(separator: ":", maxSplits: 1).map(String.init)
         guard p.count == 2, let k = Kind(rawValue: p[0].lowercased()), !p[1].isEmpty else { return nil }
+        if k == .person { guard let n = Int32(p[1].trimmingCharacters(in: .whitespaces)), n >= 0 else { return nil }; return FindTerm(kind: k, key: String(n), exclude: exclude) }
         return FindTerm(kind: k, key: p[1].lowercased(), exclude: exclude)
     }
 }
@@ -77,9 +81,12 @@ final class Finder: @unchecked Sendable {
     private let soundFamilyOfLabel: [[Int]]
     private var sceneScores: [Float]            // familles × cases
     private var soundScores: [Float]
+    let faces: FaceIndex?                       // personnages reconnus (modèle optionnel), nil sinon
+    private var personScores: [Int32: [Float]] = [:]
 
-    init(_ index: AnalysisIndex) {
+    init(_ index: AnalysisIndex, faces: FaceIndex? = nil) {
         self.index = index
+        self.faces = faces
         grid = index.sceneStep
         cells = max(Int((index.duration / index.sceneStep).rounded(.up)), 1)
         sceneFamilyOfLabel = index.sceneLabels.map { SceneFamilies.ofLabel[$0] ?? [] }
@@ -137,6 +144,16 @@ final class Finder: @unchecked Sendable {
                 for e in Int(index.soundOffsets[k]) ..< Int(index.soundOffsets[k + 1]) where Int(index.soundLabelIdx[e]) == li { for c in c0 ..< c1 { out[c] = max(out[c], Float(index.soundConf[e]) / 255) } }
             }
             return out
+        case .person:
+            guard let faces, let g = Int32(t.key), g >= 0 else { return [] }
+            if let c = personScores[g] { return c }
+            var out = [Float](repeating: 0, count: cells)
+            for iv in faces.intervals(of: g) {
+                let c0 = max(Int((iv.start / grid).rounded(.down)), 0), c1 = min(Int((iv.end / grid).rounded(.up)), cells)
+                if c0 < c1 { for c in c0 ..< c1 { out[c] = 1 } }
+            }
+            personScores[g] = out
+            return out
         }
     }
 
@@ -147,6 +164,7 @@ final class Finder: @unchecked Sendable {
         case .sound: return SoundFamilies.byID[t.key] != nil
         case .sceneLabel: return index.sceneLabels.contains(t.key)
         case .soundLabel: return index.soundLabels.contains(t.key)
+        case .person: if let faces, let g = Int32(t.key) { return !faces.hidden.contains(g) && faces.group.contains(g) }; return false
         }
     }
 

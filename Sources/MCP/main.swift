@@ -5,6 +5,8 @@ import Foundation
 
 // `mslice-mcp --analyze <fichier>` : processus d'analyse lancé par l'appli (voir Analysis/AnalysisRunner.swift)
 if let i = CommandLine.arguments.firstIndex(of: "--analyze"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1]) }
+// `mslice-mcp --faces <fichier>` : reconnaissance des personnages (modèle optionnel), même principe
+if let i = CommandLine.arguments.firstIndex(of: "--faces"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1], faces: true) }
 
 signal(SIGPIPE, SIG_IGN)
 setvbuf(stdout, nil, _IOLBF, 0)

@@ -54,7 +54,7 @@ actor AnalysisSlot {
     func release() { if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() } }
 }
 
-private func onThread<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+func onThread<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
     await withCheckedContinuation { c in
         let t = Thread { c.resume(returning: work()) }
         t.qualityOfService = .utility; t.stackSize = 4 << 20; t.start()

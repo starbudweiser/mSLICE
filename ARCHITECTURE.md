@@ -104,8 +104,29 @@ Réserve d'images : 3 % de la RAM, 400 Mo au plus, libérée après 12 s sans de
 - **Interface** (`FindModel`, `FindPanel`, onglet Édition | Trouver | Agent) : avant l'analyse, en cours (annulable), résultats (scènes, sons, carte « Personnages »), sélection avec passages (vignettes à la demande, cases à cocher),
   « Ajouter N morceaux » (annulable d'un coup par ⌘Z), piste de résultats de 14 pt sous la forme d'onde (un clic va au début du passage).
 - **Modèle externe optionnel** (`ModelStore`) pour les personnages (macOS n'expose aucune identité de visage ; l'empreinte générique d'Apple mélange les personnes) : jamais embarqué, téléchargé seulement avec l'accord de
-  l'utilisateur, HTTPS seulement, taille plafonnée, empreinte SHA-256 vérifiée (et recalculée avant tout usage), installation atomique, suppression à tout moment. Tant qu'aucun modèle n'est retenu (étape « Essai des modèles » :
-  licence, taille, qualité), `ModelCatalog.characters.url` reste vide et la carte l'indique au lieu de proposer un téléchargement.
+  l'utilisateur, HTTPS seulement, taille plafonnée, empreinte SHA-256 vérifiée (et recalculée avant tout usage), installation atomique, suppression à tout moment. Modèle retenu en 1.3 : voir § 12.
 - **Agent** : `analyze_media` (plans, familles de scènes et de sons trouvées, avec leurs identifiants) et `find_scenes` (`include` ET, `exclude` SAUF, `whole_shots`, `apply` = none / add / set ; critères `scene:`, `sound:`, `label:`,
   `sound_label:`). Mêmes garde-fous (aucun fichier écrit, aucun morceau supprimé par un ajout). Essais : `--selftest-analysis`, `--selftest-ui` (onglet et pont), `scripts/mcp_e2e.py` (index synthétique pour les combinaisons).
 
+## 12. Trouver : les personnages (v1.3)
+
+- **Modèle** : AuraFace-v1 (fal.ai, ArcFace ResNet-100, Apache 2.0) converti en Core ML palettisé 8 bits (zip de 62,6 Mo, `scripts/convert_character_model.py`), choisi à l'essai (ETAT.md § 9 : AUC 0,998 / 0,980, 1,7 ms par visage ; l'empreinte
+  générique d'Apple, DINOv2 et SFace écartés). Hébergé dans une release de `starbudweiser/mSLICE-models`. `ModelFiles` (catalogue, fichiers installés, vérifications ; partagé avec `mslice-mcp`) et `ModelStore` (téléchargement
+  avec accord, HTTPS seulement, taille plafonnée, empreinte SHA-256 de l'archive vérifiée) : l'archive est inspectée avant extraction (aucun chemin absolu ni « .. », taille décompressée plafonnée), décompressée dans un dossier de travail
+  (aucun lien symbolique toléré), le `.mlpackage` est compilé (`MLModel.compileModel`), seuls le `.mlmodelc`, la licence et la notice sont gardés, et l'empreinte de l'arbre compilé est notée au manifeste puis **recalculée avant chaque
+  chargement** (`ModelFiles.verified`) : un modèle remplacé ou altéré n'est jamais chargé.
+- **Reconnaissance** (`FaceAnalyzer`, dans `mslice-mcp --faces <fichier>`, même protocole que `--analyze` : progression JSON, cancel / pause / resume, arrêt si l'appli disparaît) : une passe de décodage matériel (jusqu'à 1 920 px), une
+  image par seconde, `VNDetectFaceLandmarksRequest` → 5 points → alignement par similitude sur le gabarit ArcFace → 112 × 112 → modèle (moteur neuronal) → empreinte de 512 valeurs normalisées. Mémoire bornée (deux images en attente),
+  qualité de service « utilitaire », pause pendant la lecture et l'export. Le modèle est libéré avec le processus.
+- **Mesuré** (vidéo de test de 28:05, 1080p, M5 Max) : 22 s, 1 845 visages, 50 personnages (1 617 visages rattachés, 925 suivis), pic de 278 Mo dans le processus (le modèle chargé en occupe l'essentiel : décoder à 1 280 px au lieu de 1 920 ne
+  gagne que 30 Mo et ralentit la passe par 2,5), rien de gardé par l'appli ; annulation en 0,1 s ; modèle altéré refusé.
+- **Suivis et groupes** (`FaceClustering`) : les visages de deux images voisines d'un même plan (sans coupure entre elles), dont les boîtes se recouvrent et dont les empreintes se ressemblent, forment un suivi ; regroupement par liaison
+  moyenne (UPGMA sur les sommes d'empreintes, similarité 0,30 soit une distance de 0,70) en partant des suivis, avec la contrainte stricte « jamais deux visages d'une même image dans un personnage » ; un personnage compte au moins 4 images.
+  La séparation d'un personnage relance la liaison sur ses seuls suivis jusqu'à en obtenir deux.
+- **Index des visages** (`FaceIndex`, `.msfaces` à côté de `.msidx`, même clé, lié à l'empreinte du modèle) : instant, boîte, taille, suivi, personnage, empreinte quantifiée sur 8 bits (≈ 0,5 Ko par visage) ; noms, personnages écartés. Binaire,
+  versionné, refusé s'il est tronqué ou incohérent (comptes, valeurs non finies, instants non triés, groupes hors table). Aucune image n'est gardée : les vignettes rondes sont recalculées depuis la vidéo.
+- **Requêtes** : critère `person:<n>` (grille de 0,5 s, couverture = un pas d'échantillonnage autour de chaque visage, prolongée dans un même suivi), donc ET / SAUF avec les scènes et les sons, plans entiers, lissage : tout le reste de `Finder`.
+- **Interface** : carte « Personnages » (télécharger → reconnaître → vignettes rondes, 3 par ligne ; clic = ajouter à la sélection ; clic droit = renommer, réunir avec…, séparer en deux, ce n'est pas un personnage) ; vignette dans la pastille du critère ;
+  les personnages sont aussi dans le menu « Critère ». Les corrections sont enregistrées en tâche de fond.
+- **Agent** : `analyze_media` (`characters=true` : ne télécharge jamais, dit `model_not_installed` sans modèle), `list_subjects`, `name_subject`, et `find_scenes` accepte `person:<id ou nom>` (nom insensible à la casse ; ambigu = erreur).
+- Limites : visages seulement (pas de créatures ni de costumes) ; une seule vidéo de test (séries TV) pour les réglages ; les visages de profil, petits (< 32 px) ou flous sont écartés ou mal regroupés ; fusion manuelle prévue pour ces cas.

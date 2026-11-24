@@ -24,14 +24,27 @@ enum AnalysisRunner {
 
     static func run(_ info: MediaInfo, job: AnalysisJob, progress: @escaping @Sendable (AnalysisProgress) -> Void) async -> AnalysisIndex? {
         guard let helper = helper() else { return await Analyzer.run(info, job: job, progress: progress) }
+        let base = AnalysisProgress(hasVideo: !info.isAudioOnly, hasAudio: info.audio != nil)
+        guard await spawn(helper, ["--analyze", info.url.path], base: base, job: job, progress: progress) else { return nil }
+        return AnalysisStore.load(info)
+    }
+
+    /// Reconnaissance des personnages (modèle optionnel installé) : même principe, dans `mslice-mcp --faces`.
+    static func runFaces(_ info: MediaInfo, job: AnalysisJob, progress: @escaping @Sendable (AnalysisProgress) -> Void) async -> FaceIndex? {
+        guard let helper = helper() else { return await FaceAnalyzer.run(info, job: job, progress: progress) }
+        guard await spawn(helper, ["--faces", info.url.path], base: AnalysisProgress(hasVideo: true, hasAudio: false), job: job, progress: progress) else { return nil }
+        return FaceStore.load(info)
+    }
+
+    /// Lance le processus d'analyse, relaie sa progression, transmet l'annulation et la pause ; vrai s'il a terminé normalement.
+    private static func spawn(_ helper: URL, _ arguments: [String], base: AnalysisProgress, job: AnalysisJob, progress: @escaping @Sendable (AnalysisProgress) -> Void) async -> Bool {
         await AnalysisSlot.shared.acquire()
         defer { Task { await AnalysisSlot.shared.release() } }
-        if job.cancelled { return nil }
-        let base = AnalysisProgress(hasVideo: !info.isAudioOnly, hasAudio: info.audio != nil)
+        if job.cancelled { return false }
         progress(base)
         let child = Child()
         let ok: Bool = await withCheckedContinuation { cont in
-            let p = Process(); p.executableURL = helper; p.arguments = ["--analyze", info.url.path]
+            let p = Process(); p.executableURL = helper; p.arguments = arguments
             let inp = Pipe(), out = Pipe()
             p.standardInput = inp; p.standardOutput = out; p.standardError = FileHandle.nullDevice
             p.qualityOfService = .utility
@@ -78,14 +91,13 @@ enum AnalysisRunner {
             }
             monitor.qualityOfService = .utility; monitor.start()
         }
-        guard ok, !job.cancelled else { return nil }
-        return AnalysisStore.load(info)
+        return ok && !job.cancelled
     }
 }
 
 /// Côté processus d'analyse (`mslice-mcp --analyze <fichier>`) : progression en JSON sur la sortie standard, ordres sur l'entrée standard.
 enum AnalysisChild {
-    static func main(path: String) -> Never {
+    static func main(path: String, faces: Bool = false) -> Never {
         setvbuf(stdout, nil, _IOLBF, 0)
         func say(_ o: [String: Any]) {
             guard JSONSerialization.isValidJSONObject(o), let d = try? JSONSerialization.data(withJSONObject: o), let s = String(data: d, encoding: .utf8) else { return }
@@ -100,10 +112,13 @@ enum AnalysisChild {
             exit(3)                                        // l'appli a disparu : on s'arrête aussi
         }
         Task {
-            let idx = await Analyzer.run(info, job: job, slot: false) { p in
+            let report: @Sendable (AnalysisProgress) -> Void = { p in
                 say(["i": p.images, "s": p.sounds, "t": p.imagesTime, "ss": p.soundsSeconds, "p": p.paused, "mb": p.memoryMB])
             }
-            if let idx { say(["done": true, "seconds": idx.seconds]); exit(0) }
+            let seconds: Double? = faces
+                ? await FaceAnalyzer.run(info, job: job, slot: false, progress: report)?.seconds
+                : await Analyzer.run(info, job: job, slot: false, progress: report)?.seconds
+            if let seconds { say(["done": true, "seconds": seconds]); exit(0) }
             say(["error": job.cancelled ? "cancelled" : "analysis failed"]); exit(job.cancelled ? 4 : 1)
         }
         dispatchMain()

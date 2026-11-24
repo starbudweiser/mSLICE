@@ -33,6 +33,17 @@ if let i = CommandLine.arguments.firstIndex(of: "--selftest-analysis"), CommandL
     dispatchMain()
 }
 
+// `mSLICE --install-model <zip>` : installe le modèle des personnages depuis un zip local (essais et captures, sans fenêtre ni réseau) ; l'empreinte du zip doit être celle du catalogue.
+if let i = CommandLine.arguments.firstIndex(of: "--install-model"), CommandLine.arguments.indices.contains(i + 1) {
+    let zip = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    Task { @MainActor in
+        let spec = ModelCatalog.characters
+        do { try await ModelStore.installFile(zip, spec: spec, sha256: spec.sha256 ?? ""); print(ModelFiles.verified(spec) ? "installé et vérifié : \(ModelFiles.folder(spec).path)" : "installé mais non conforme"); exit(ModelFiles.verified(spec) ? 0 : 1) }
+        catch { print("échec : \(error.localizedDescription)"); exit(1) }
+    }
+    dispatchMain()
+}
+
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate
