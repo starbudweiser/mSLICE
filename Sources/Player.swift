@@ -25,7 +25,7 @@ final class PlayerModel: ObservableObject {
     init() {
         player.automaticallyWaitsToMinimizeStalling = false
         player.actionAtItemEnd = .pause
-        observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 60), queue: .main) { [weak self] t in
+        observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] t in
             MainActor.assumeIsolated {
                 guard let self, self.player.rate != 0, t.isValid else { return }
                 self.time = min(max(t.seconds, 0), self.duration)

@@ -47,6 +47,7 @@ enum AgentBridge {
             let n = read(fd, &buf, buf.count)
             if n <= 0 { if carry.isEmpty { return nil }; let l = carry; carry = Data(); return l }
             carry.append(buf, count: n)
+            if carry.count > 16 * 1_048_576 { return nil }          // une requête ne fait jamais 16 Mo : on coupe plutôt que de gonfler en mémoire
         }
     }
 

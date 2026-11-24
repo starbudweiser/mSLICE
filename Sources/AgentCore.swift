@@ -149,6 +149,7 @@ enum Agent {
 
     static func fileURL(_ args: [String: Any], _ key: String = "path") throws -> URL {
         guard let raw = args[key] as? String, !raw.isEmpty else { throw AgentError("\(key) is required (absolute path of an audio or video file).") }
+        guard !raw.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || $0 == "\n" || $0 == "\r" }) else { throw AgentError("The path contains control characters (refused).") }
         let u = URL(fileURLWithPath: (raw as NSString).expandingTildeInPath).standardizedFileURL
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir), !isDir.boolValue else { throw AgentError("File not found: \(u.path)") }
@@ -173,6 +174,10 @@ enum Agent {
 
     /// « 12.5 », « 1:23.5 », « 1:02:03 » → secondes.
     static func time(_ any: Any?) -> Double? {
+        guard let v = timeRaw(any), v.isFinite else { return nil }       // NaN et infini refusés (min/max de Swift les laisseraient passer)
+        return v
+    }
+    private static func timeRaw(_ any: Any?) -> Double? {
         if let n = any as? NSNumber { return n.doubleValue }
         guard var s = (any as? String)?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
         s = s.replacingOccurrences(of: ",", with: ".")
@@ -319,7 +324,7 @@ enum Agent {
         case "remove_segment":
             let i = try await info(try fileURL(a))
             var cur = currentSegments(i, host: host).segs
-            guard let n = number(a["index"]), Int(n) >= 1, Int(n) <= cur.count else { throw AgentError("index must be between 1 and \(cur.count).") }
+            guard let n = number(a["index"]), n >= 1, n <= Double(cur.count) else { throw AgentError("index must be between 1 and \(cur.count).") }      // comparé en Double : Int(1e30) planterait
             cur.remove(at: Int(n) - 1)
             let live = store(cur, i, host: host)
             return segmentsResult(cur, live: live, i)
@@ -511,6 +516,12 @@ enum AgentLog {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let summary = args.keys.sorted().map { k -> String in let v = "\(args[k] ?? "")".replacingOccurrences(of: "\n", with: " "); return "\(k)=\(v.count > 70 ? "…" + v.suffix(67) : v)" }.joined(separator: " ")
         let line = "\(f.string(from: Date()))\t\(client)\t\(tool)\t\(summary)\t\(result)\n"
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() } else { try? line.write(to: url, atomically: true, encoding: .utf8) }
+        // Rotation : au-delà de 1 Mo, on garde la seconde moitié du journal.
+        if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize), size > 1_048_576, let d = try? Data(contentsOf: url) {
+            let tail = d.suffix(d.count / 2); let cut = tail.firstIndex(of: 10).map { tail.index(after: $0) } ?? tail.startIndex
+            try? Data(tail[cut...]).write(to: url, options: .atomic)
+        }
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+        else { try? line.write(to: url, atomically: true, encoding: .utf8); try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
     }
 }

@@ -325,7 +325,18 @@ final class AgentChat: ObservableObject {
         return nil
     }
 
+    /// Une clé API ne part que par HTTPS, ou en clair vers la machine elle-même / le réseau local (Ollama, LM Studio…).
+    static func endpointAllowed(_ url: URL) -> Bool {
+        if url.scheme?.lowercased() == "https" { return true }
+        guard url.scheme?.lowercased() == "http", let h = url.host?.lowercased() else { return false }
+        if h == "localhost" || h == "::1" || h.hasSuffix(".local") || h.hasSuffix(".localhost") { return true }
+        let p = h.split(separator: ".").compactMap { Int($0) }
+        guard p.count == 4 else { return false }
+        return p[0] == 127 || p[0] == 10 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && (16 ... 31).contains(p[1]))
+    }
+
     static func post(_ url: URL, _ headers: [String: String], _ body: [String: Any]) async throws -> [String: Any] {
+        guard endpointAllowed(url) else { throw AgentError(L.t("agent.err.http")) }
         var req = URLRequest(url: url); req.httpMethod = "POST"; req.timeoutInterval = 300
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -360,6 +371,7 @@ final class AgentChat: ObservableObject {
     }
 
     private static func get(_ url: URL, _ headers: [String: String]) async -> (Bool, String) {
+        guard endpointAllowed(url) else { return (false, L.t("agent.err.http")) }
         var req = URLRequest(url: url); req.timeoutInterval = 10
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         do {

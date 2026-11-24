@@ -64,11 +64,35 @@ final class Scrubber: @unchecked Sendable {
     private var useTick: UInt64 = 0
     private var bytes = 0
     private var tick: Int64 = 0
-    private let byteCap = Int(min(Double(ProcessInfo.processInfo.physicalMemory) * 0.04, 1.6e9))
+    /// Mémoire d'images décodées gardée en réserve : 3 % de la RAM, au plus 400 Mo (≈ 290 images 1280×720). Le groupe en cours peut dépasser le temps du défilement.
+    /// Cette mémoire graphique (IOSurface) n'apparaît pas dans l'empreinte du processus mais occupe bien la RAM : on la libère dès le repos.
+    private let byteCap = Int(min(Double(ProcessInfo.processInfo.physicalMemory) * 0.03, 400e6))
+    private static let idleSeconds = 12.0
+    private var lastActivity = Date()
+    private var memoryPressure: DispatchSourceMemoryPressure?
 
     init() {
         layer.videoGravity = .resizeAspect
         layer.isHidden = true
+        // Pression mémoire du système : on rend tout de suite les images en réserve.
+        let src = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: q)
+        src.setEventHandler { [weak self] in self?.purge() }
+        src.resume(); memoryPressure = src
+    }
+
+    /// Libère le décodeur et toutes les images en réserve (sur `q`).
+    private func purge() {
+        active?.reader.cancelReading(); active = nil
+        gops = [:]; bytes = 0
+    }
+
+    /// Après un temps sans demande, libère la réserve : le défilement suivant repart d'une image clé (≈ 10 ms).
+    private func scheduleIdlePurge() {
+        q.asyncAfter(deadline: .now() + Self.idleSeconds + 0.5) { [weak self] in
+            guard let self else { return }
+            self.lock.lock(); let busy = self.working; let idle = Date().timeIntervalSince(self.lastActivity); self.lock.unlock()
+            if !busy, idle >= Self.idleSeconds { self.purge() }
+        }
     }
 
     // MARK: Interface (fil principal)
@@ -107,7 +131,7 @@ final class Scrubber: @unchecked Sendable {
         lock.lock(); let wasWanted = wanted; lock.unlock()
         if !wasWanted { layer.flushAndRemoveImage() }                // image périmée retirée avant de rendre la couche visible
         lock.lock()
-        wanted = true; target = t; generation += 1
+        wanted = true; target = t; generation += 1; lastActivity = Date()
         let start = !working; if start { working = true }
         lock.unlock()
         if start { q.async { [self] in work() } }
@@ -134,6 +158,7 @@ final class Scrubber: @unchecked Sendable {
     var presentCount: Int { lock.lock(); defer { lock.unlock() }; return presentTotal }
     var mismatches: Int { lock.lock(); defer { lock.unlock() }; return mismatchCount }
     var cacheSummary: String { q.sync { "\(gops.count) groupes, \(bytes / 1_048_576) Mo" } }
+    var cacheBytes: Int { q.sync { bytes } }
 
     // MARK: Fil de décodage
 
@@ -143,7 +168,7 @@ final class Scrubber: @unchecked Sendable {
             if let s = setup { apply(s) }
             let served = serve()
             lock.lock()
-            if generation == served && pendingSetup == nil { working = false; lock.unlock(); return }
+            if generation == served && pendingSetup == nil { working = false; lock.unlock(); scheduleIdlePurge(); return }
             lock.unlock()
         }
     }

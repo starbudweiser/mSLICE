@@ -61,7 +61,8 @@ enum Planner {
 
     /// Nom de fichier sûr : sans « / » ni « : », sans point initial, espaces de bord retirés.
     static func sanitize(_ s: String) -> String {
-        var t = s.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+        var t = String(String.UnicodeScalarView(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) && $0 != "\n" && $0 != "\r" && $0 != "\0" }))
+        t = t.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespacesAndNewlines)
         while t.hasPrefix(".") { t.removeFirst() }
         return String(t.prefix(200))
     }

@@ -97,6 +97,24 @@ try:
     check(all(f.endswith((".mp4", ".mp3", ".wav")) for f in os.listdir(work) if os.path.isfile(os.path.join(work, f))), "aucun fichier hors export dans le dossier")
     check(os.path.exists(vid) and os.path.exists(aud), "originaux intacts")
 
+    # entrées hostiles
+    os.symlink("/tmp", os.path.join(work, "evasion"))
+    err, t, _ = call("export", path=vid, folder="evasion")
+    check(err and "not allowed" in str(t), "lien symbolique vers /tmp : dossier refusé")
+    err, t, _ = call("export", path=vid, folder="evasion/nouveau")
+    check(err and "not allowed" in str(t), "sous-dossier d'un lien symbolique : refusé")
+    check(not os.path.exists("/tmp/nouveau"), "rien n'a été créé hors du dossier autorisé")
+    err, t, _ = call("probe_media", path=vid + "\nfile '/etc/passwd'")
+    check(err and ("control" in str(t) or "not found" in str(t).lower()), "chemin avec saut de ligne refusé")
+    err, t, _ = call("remove_segment", path=vid, index=1e30)
+    check(err and "between" in str(t), "index géant : erreur propre (pas de plantage)")
+    err, t, _ = call("set_segments", path=vid, segments=[{"start": "nan", "end": 5}, {"start": "inf", "end": "-inf"}])
+    check(err, "NaN / infini : refusés proprement")
+    err, t, _ = call("set_segments", path=vid, segments=[{"start": 1, "end": 4, "name": "../../evil\n/x"}])
+    err2, ex5, _ = call("export", path=vid)
+    check(not err and not err2 and all(os.path.dirname(c["path"]) == work for c in ex5["created"]), "nom de morceau malveillant : le fichier reste dans le dossier source")
+    check(proc.poll() is None, "le serveur MCP a survécu aux entrées hostiles")
+
     # élagage
     err, e, _ = call("trim_edges", path=vid, head=3, tail=2)
     check(not err and e["segments"][0]["start"] == 3 and abs(e["segments"][0]["end"] - 28) < 0.6, "trim_edges")

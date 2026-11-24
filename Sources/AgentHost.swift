@@ -30,6 +30,8 @@ final class AppAgentHost: AgentHost {
 final class AgentServer: @unchecked Sendable {
     static let shared = AgentServer()
     private var listenFD: Int32 = -1
+    private let active = NSLock()
+    private var connections = 0
 
     func start() {
         guard listenFD < 0 else { return }
@@ -47,7 +49,9 @@ final class AgentServer: @unchecked Sendable {
                 let c = accept(fd, nil, nil)
                 if c < 0 { if errno == EINTR { continue }; break }
                 var on: Int32 = 1; setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
-                Thread.detachNewThread { self.serve(c) }
+                active.lock(); let tooMany = connections >= 8; if !tooMany { connections += 1 }; active.unlock()
+                if tooMany { close(c); continue }                          // au plus 8 clients à la fois
+                Thread.detachNewThread { self.serve(c); self.active.lock(); self.connections -= 1; self.active.unlock() }
             }
         }
     }

@@ -2,6 +2,7 @@
 import AppKit
 import AVFoundation
 import CoreMedia
+import Darwin
 import Foundation
 
 @MainActor
@@ -166,6 +167,36 @@ enum EditorTest {
     }
 }
 
+/// Mesures de ressources du processus (MSLICE_PERF=1) : empreinte mémoire (phys_footprint) et temps processeur cumulé.
+enum Perf {
+    static func footprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) } }
+        return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+    }
+    static func cpuSeconds() -> Double {
+        var u = rusage(); getrusage(RUSAGE_SELF, &u)
+        return Double(u.ru_utime.tv_sec + u.ru_stime.tv_sec) + Double(u.ru_utime.tv_usec + u.ru_stime.tv_usec) / 1e6
+    }
+    nonisolated(unsafe) static var lastCPU = 0.0, lastT = Date()
+    static func mark(_ label: String) {
+        guard ProcessInfo.processInfo.environment["MSLICE_PERF"] == "1" else { return }
+        let c = cpuSeconds(), now = Date()
+        let dt = now.timeIntervalSince(lastT)
+        // `footprint` (outil système) compte aussi la mémoire graphique (IOSurface) que phys_footprint ne montre pas
+        var fp = "?"
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/footprint"); p.arguments = ["\(getpid())"]
+        let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
+        if (try? p.run()) != nil {
+            let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self); p.waitUntilExit()
+            if let l = out.split(separator: "\n").first(where: { $0.contains("Footprint:") }) { fp = l.replacingOccurrences(of: "Footprint:", with: "").trimmingCharacters(in: .whitespaces) }
+        }
+        print(String(format: "PERF   %-34@ mémoire %6.0f Mo (footprint %@)   processeur %5.1f s  (%+.1f s en %.1f s = %.0f %%)", label as NSString, footprintMB(), fp as NSString, c, c - lastCPU, dt, dt > 0 ? (c - lastCPU) / dt * 100 : 0))
+        lastCPU = c; lastT = now
+    }
+}
+
 /// Client MCP minimal pour les essais : lance `mslice-mcp` et dialogue en JSON-RPC par ses tubes.
 final class MCPProc: @unchecked Sendable {
     private let p = Process(), inp = Pipe(), outp = Pipe()
@@ -227,6 +258,7 @@ enum UITest {
         for _ in 0 ..< 100 { if model.current != nil { break }; await wait(0.2) }
         guard let d = model.current else { print("ÉCHEC  ouverture"); return 1 }
         check(true, "ouverture : \(d.name) \(Fmt.time(d.duration))")
+        Perf.mark("après ouverture")
         for _ in 0 ..< 150 { if !d.keyframes.isEmpty, !d.peaks.isEmpty, model.player.player.currentItem?.status == .readyToPlay { break }; await wait(0.2) }
         check(!d.keyframes.isEmpty, "images clés chargées : \(d.keyframes.count)")
         check(!d.peaks.isEmpty, "forme d'onde calculée : \(Fmt.time(d.peaks.duration)) déjà")
@@ -235,6 +267,7 @@ enum UITest {
         for _ in 0 ..< 400 { if (0 ..< d.strip.count).allSatisfy({ d.strip.image($0) != nil }) { break }; await wait(0.1) }
         let tiles = (0 ..< d.strip.count).filter { d.strip.image($0) != nil }.count
         check(tiles == d.strip.count, "vignettes : \(tiles)/\(d.strip.count) en \(String(format: "%.1f", Date().timeIntervalSince(tFilm))) s (si le cache existe : instantané)")
+        Perf.mark("vignettes et forme d'onde prêtes")
 
         // redimensionnement : la timeline suit la largeur de la fenêtre et reste dans sa carte
         if let w = delegate.window {
@@ -274,6 +307,7 @@ enum UITest {
         do {
             let sc = model.player.scrubber
             for _ in 0 ..< 50 { if sc.ready { break }; await wait(0.1) }
+            Perf.mark("repos (aperçu seul)"); await wait(10); Perf.mark("repos 10 s")
             check(sc.ready, "décodeur de défilement prêt")
             if sc.ready {
                 let fd = model.player.frameDuration
@@ -309,6 +343,7 @@ enum UITest {
                     firsts.append(r.first); exacts.append(r.exact)
                     if !(r.pts <= t + 1e-3 && t - r.pts < fd * 1.6) { bad += 1; print("        image hors cible : demandé \(t), obtenu \(r.pts)") }
                 }
+                Perf.mark("12 sauts à froid")
                 check(lost == 0 && !firsts.isEmpty, "sauts à froid : \(targets.count - lost)/\(targets.count) réponses")
                 if !firsts.isEmpty {
                     check(median(firsts) < 60, "sauts à froid : 1re image (clé) en \(f0(median(firsts))) ms (médiane), \(f0(firsts.max() ?? 0)) ms (max)")
@@ -329,6 +364,7 @@ enum UITest {
                     if c == last { run += 1; maxRun = max(maxRun, run) } else { run = 0 }
                     last = c
                 }
+                Perf.mark("glissement rapide (400 mouvements)")
                 let shown = sc.presentCount - n0
                 check(maxRun <= 6, "glissement rapide : \(shown) images affichées en \(f0(now() - d0)) ms, plus longue pause \(maxRun * 16) ms")
                 if let r = await jump(t) { check(r.pts <= t + 1e-3 && t - r.pts < fd * 1.6, "glissement : image exacte \(f0(r.exact)) ms après l'arrêt") } else { check(false, "glissement : image exacte") }
@@ -352,8 +388,13 @@ enum UITest {
                         check(diff < 6, "image à \(Fmt.time(r.pts)) identique à celle d'Apple (écart moyen \(String(format: "%.1f", diff))/255)")
                     }
                 }
+                Perf.mark("fin des essais de défilement")
+                let held = sc.cacheBytes
+                check(held <= 520 * 1_048_576, "réserve d'images plafonnée : \(held / 1_048_576) Mo après le défilement (plafond 400 Mo + groupe en cours)")
                 check(sc.mismatches == 0, "images clés : début de groupe cohérent (\(sc.mismatches) écart) ; mémoire : \(sc.cacheSummary)")
                 sc.hide()
+                await wait(16); Perf.mark("16 s après le défilement")
+                check(sc.cacheBytes == 0, "réserve libérée au repos : \(sc.cacheBytes / 1_048_576) Mo après 16 s")
             }
         }
 
@@ -470,9 +511,11 @@ enum UITest {
 
         // lecture : espace, L, K
         model.player.seek(100); await wait(0.6)
+        Perf.mark("avant lecture")
         _ = key(" ", 49)
         var samples: [Double] = []
         for _ in 0 ..< 6 { await wait(0.5); samples.append(model.player.time - 100) }
+        Perf.mark("lecture 3 s (vidéo 1080p + timeline)")
         let rate = (samples[5] - samples[2]) / 1.5          // vitesse régulière après le démarrage
         check(model.player.isPlaying && abs(rate - 1) < 0.2, "espace : lecture à vitesse normale (×\(String(format: "%.2f", rate)) ; positions \(samples.map { String(format: "%.2f", $0) }))")
         _ = key("k", 40); await wait(0.3)
