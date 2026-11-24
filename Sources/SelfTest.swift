@@ -392,6 +392,57 @@ enum UITest {
             } else { check(false, "mslice-mcp introuvable dans le paquet") }
         }
 
+        // panneau de discussion : boucle d'outils des moteurs API, contre un faux service local (MSLICE_TEST_LLM=http://127.0.0.1:port)
+        if let llm = ProcessInfo.processInfo.environment["MSLICE_TEST_LLM"] {
+            let ud = UserDefaults.standard
+            let saved = ["agent.enabled", "agent.backend", "agent.anthropic.base", "agent.openai.base", "agent.openai.model"].map { ($0, ud.object(forKey: $0)) }
+            let keyAn = AgentKeychain.get("anthropic"), keyOa = AgentKeychain.get("openai")
+            defer {
+                for (k, v) in saved { if let v { ud.set(v, forKey: k) } else { ud.removeObject(forKey: k) } }
+                AgentKeychain.set("anthropic", keyAn ?? ""); AgentKeychain.set("openai", keyOa ?? "")
+            }
+            ud.set(true, forKey: "agent.enabled")
+            AgentKeychain.set("anthropic", "test-key"); AgentKeychain.set("openai", "test-key")
+            ud.set(llm, forKey: "agent.anthropic.base"); ud.set(llm + "/v1", forKey: "agent.openai.base"); ud.set("test-model", forKey: "agent.openai.model")
+            let chat = AgentChat.shared
+            for backend in [AgentBackend.anthropic, .openai] {
+                ud.set(backend.rawValue, forKey: "agent.backend")
+                let t = await chat.test()
+                check(t.ok, "\(backend.title) : test de connexion (\(t.text))")
+                chat.reset(); chat.send("Où en est l'appli ?")
+                for _ in 0 ..< 150 { if !chat.busy, chat.messages.count >= 3 { break }; await wait(0.1) }
+                let tool = chat.messages.first { $0.role == .tool }
+                check(tool?.tool == "get_state" && tool?.done == true && tool?.failed == false, "\(backend.title) : l'agent appelle get_state, l'appli exécute l'outil")
+                check(chat.messages.last { $0.role == .assistant }?.text.hasPrefix("Terminé") == true, "\(backend.title) : réponse finale affichée (\(chat.messages.last?.text.prefix(40) ?? "—"))")
+                // tour suivant : l'historique reste cohérent
+                chat.send("Encore une fois."); for _ in 0 ..< 150 { if !chat.busy { break }; await wait(0.1) }
+                check(chat.messages.filter { $0.role == .assistant && $0.text.hasPrefix("Terminé") }.count == 2, "\(backend.title) : deuxième tour avec historique")
+            }
+            ud.set(false, forKey: "agent.enabled")
+            chat.reset(); chat.send("test")
+            check(chat.messages.last?.role == .note && chat.messages.last?.failed == true && !chat.busy, "agent désactivé : le panneau refuse avec un message")
+            chat.reset()
+        }
+
+        // panneau de discussion avec la vraie CLI Claude Code (MSLICE_TEST_CLAUDE=1 : un appel court, utilise l'abonnement de l'utilisateur)
+        if ProcessInfo.processInfo.environment["MSLICE_TEST_CLAUDE"] == "1" {
+            let ud = UserDefaults.standard
+            let saved = ["agent.enabled", "agent.backend"].map { ($0, ud.object(forKey: $0)) }
+            defer { for (k, v) in saved { if let v { ud.set(v, forKey: k) } else { ud.removeObject(forKey: k) } }; AgentServer.shared.stop() }
+            ud.set(true, forKey: "agent.enabled"); ud.set(AgentBackend.claudeCode.rawValue, forKey: "agent.backend")
+            AgentServer.shared.stop(); AgentServer.shared.start()
+            let chat = AgentChat.shared
+            let t = await chat.test()
+            check(t.ok, "Claude Code : détecté (\(t.text))")
+            chat.reset(); chat.send("Appelle l'outil get_state, puis réponds uniquement par le mot OK suivi du nombre de fichiers ouverts.")
+            for _ in 0 ..< 1200 { if !chat.busy, chat.messages.contains(where: { $0.role == .assistant }) { break }; if !chat.busy, chat.messages.contains(where: { $0.role == .note }) { break }; await wait(0.1) }
+            for m in chat.messages { print("        [\(m.role)] \(m.text.prefix(120))") }
+            let tool = chat.messages.first { $0.role == .tool }
+            check(tool?.tool == "get_state" && tool?.done == true && tool?.failed == false, "Claude Code : appelle get_state par mslice-mcp → l'appli")
+            check(chat.messages.last { $0.role == .assistant }?.text.contains("OK") == true, "Claude Code : réponse affichée")
+            chat.reset()
+        }
+
         // positionnement précis
         model.player.seek(15); await wait(0.6)
         let real = model.player.player.currentTime().seconds

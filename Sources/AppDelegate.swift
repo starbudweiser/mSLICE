@@ -24,6 +24,7 @@ enum WindowMemory {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
+    var restoreAfterCapture: (() -> Void)?
     var window: NSWindow?
     var settingsWindow: NSWindow?
     var aboutWindow: NSWindow?
@@ -32,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var launched = false
     var queued: [URL] = []
     func arg(_ name: String) -> String? { args.firstIndex(of: name).flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } }
-    var silent: Bool { args.contains("--silent") || arg("--capture") != nil || arg("--selftest-ui") != nil || arg("--capture-about") != nil }
+    var silent: Bool { args.contains("--silent") || arg("--capture") != nil || arg("--selftest-ui") != nil || arg("--capture-about") != nil || arg("--capture-settings") != nil }
 
     func applicationWillFinishLaunching(_ n: Notification) {
         AppDelegate.shared = self
@@ -62,6 +63,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let f = arg("--selftest-ui") {
             model.testMode = true; openMainWindow(show: false)
             Task { @MainActor in exit(await UITest.run(path: f, delegate: self)) }
+            return
+        }
+        if let out = arg("--capture-settings") {          // fenêtre des réglages seule (--agent-page : page Agent)
+            let ud = UserDefaults.standard, had = ud.object(forKey: "agent.enabled")
+            if args.contains("--agent-page") { ud.set(true, forKey: "agent.enabled") }
+            let host = NSHostingView(rootView: SettingsView(model: model))
+            host.frame = NSRect(x: 0, y: 0, width: 560, height: 560)
+            let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false); win.contentView = host
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                host.layoutSubtreeIfNeeded()
+                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) { host.cacheDisplay(in: host.bounds, to: rep); try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out)); print("OK : \(out)") }
+                if let h = had { ud.set(h, forKey: "agent.enabled") } else { ud.removeObject(forKey: "agent.enabled") }
+                exit(0)
+            }
             return
         }
         if let out = arg("--capture") {
@@ -234,6 +249,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let t = self.arg("--time").flatMap(Double.init) { model.player.seek(t) }
             }
             if self.arg("--state") == "shortcuts" { model.showShortcuts = true }
+            if let st = self.arg("--state"), st.hasPrefix("agent") {          // panneau de discussion (réglages restaurés après la capture)
+                let ud = UserDefaults.standard
+                self.restoreAfterCapture = { ud.removeObject(forKey: "rightTab"); ud.removeObject(forKey: "agent.enabled") }
+                ud.set(1, forKey: "rightTab"); ud.set(st != "agent-off", forKey: "agent.enabled")
+                if st == "agent" {
+                    let c = AgentChat.shared
+                    c.messages = [ChatMessage(role: .user, text: "Retire les silences du début et de la fin, puis exporte."),
+                                  ChatMessage(role: .tool, text: "trim_silences · Rush_interview.mov", tool: "trim_silences"),
+                                  ChatMessage(role: .tool, text: "preview_export · Rush_interview.mov", tool: "preview_export"),
+                                  ChatMessage(role: .tool, text: "export · Rush_interview.mov", tool: "export", done: false),
+                                  ChatMessage(role: .assistant, text: "J'ai retiré **14,2 s** de silence au début et **9,8 s** à la fin : il reste un seul morceau, visible sur la timeline.\n\nExport en copie directe : `Rush_interview_01.mov` (début calé sur l'image clé à 0:13,9)."),
+                                  ChatMessage(role: .note, text: "Dossier refusé : l'agent n'écrit que dans le dossier du fichier source.", failed: true)]
+                }
+            }
             if self.arg("--state") == "export", let d = model.current { let r = ExportRun(); r.items = d.segments.map { ExportRun.Item(name: $0.id.uuidString.prefix(8) + ".mp4", duration: $0.duration, fraction: 0.5, state: .running) }; model.run = r; model.sheet = .export }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
@@ -242,6 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { exit(3) }
             v.cacheDisplay(in: v.bounds, to: rep)
             if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)); print("OK : \(path) (\(Int(v.bounds.width))×\(Int(v.bounds.height)))") }
+            self.restoreAfterCapture?()
             exit(0)
         }
     }

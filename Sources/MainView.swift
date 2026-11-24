@@ -310,18 +310,24 @@ struct TimelineCard: View {
 struct RightPanel: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
+    @AppStorage("rightTab") private var tab = 0          // 0 : morceaux et export, 1 : discussion avec l'agent
     var body: some View {
         VStack(spacing: 10) {
-            // Les cartes défilent si la fenêtre est basse ou les morceaux nombreux ; le bouton « Extraire » reste en bas.
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 10) {
-                    PiecesCard(model: model, doc: doc)
-                    ExportCard(model: model, doc: doc)
+            Segmented(options: [(0, L.t("agent.tab.edit")), (1, L.t("agent.title"))], selection: $tab)
+            if tab == 1 {
+                AgentPanel(model: model, chat: AgentChat.shared)
+            } else {
+                // Les cartes défilent si la fenêtre est basse ou les morceaux nombreux ; le bouton « Extraire » reste en bas.
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 10) {
+                        PiecesCard(model: model, doc: doc)
+                        ExportCard(model: model, doc: doc)
+                    }
                 }
+                Button { model.exportNow() } label: {
+                    Text(model.opts.merge ? L.t("export.go.merged") : L.t(doc.segments.count == 1 ? "export.go.one" : "export.go.n", doc.segments.count)).frame(maxWidth: .infinity)
+                }.buttonStyle(FlatButton(kind: .sand, height: 42)).opacity(doc.segments.isEmpty ? 0.4 : 1).disabled(doc.segments.isEmpty)
             }
-            Button { model.exportNow() } label: {
-                Text(model.opts.merge ? L.t("export.go.merged") : L.t(doc.segments.count == 1 ? "export.go.one" : "export.go.n", doc.segments.count)).frame(maxWidth: .infinity)
-            }.buttonStyle(FlatButton(kind: .sand, height: 42)).opacity(doc.segments.isEmpty ? 0.4 : 1).disabled(doc.segments.isEmpty)
         }
         .padding(.top, 14).padding(.bottom, 14).padding(.trailing, 14)
     }
