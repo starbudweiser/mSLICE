@@ -86,3 +86,26 @@ Réserve d'images : 3 % de la RAM, 400 Mo au plus, libérée après 12 s sans de
   (Ollama, LM Studio, OpenAI, OpenRouter…). Les deux derniers exécutent la boucle d'outils dans l'appli. Clés dans le Trousseau, envoyées seulement en HTTPS (ou vers le réseau local).
 - Essais : `scripts/mcp_e2e.py` (serveur autonome, garde-fous, entrées hostiles), `--selftest-ui` (pont vers l'appli ouverte, panneau avec `scripts/mock_llm.py` via `MSLICE_TEST_LLM`,
   Claude Code réel via `MSLICE_TEST_CLAUDE=1`), `MSLICE_PERF=1` (mémoire et processeur par étape).
+
+## 11. Trouver : analyse native des scènes et des sons (v1.2)
+
+- **Analyse** (`Sources/Analysis/`, sans interface, compilée aussi dans `mslice-mcp`) : une seule passe de décodage matériel (`AVAssetReader`, 512 px, toutes les images) ; chaque image sert à la détection des coupures
+  (miniatures de luminance 32×18 et de chrominance 16×9×2 comparées à l'image précédente : coupures exactes à l'image près, 72 sur 75 identiques à ffmpeg) et une image toutes les 0,5 s part en `VNClassifyImageRequest`
+  (1 303 étiquettes, dix meilleures gardées). En parallèle, l'audio est décodé en 16 kHz mono et classé par `SNClassifySoundRequest` (fenêtres de 1,5 s toutes les 0,5 s, 303 types). Aucune image n'est conservée ;
+  le décodeur n'a que trois images en attente (mémoire bornée). Formats que macOS ne lit pas : même proxy que le lecteur (`Proxies.swift`).
+- **Processus séparé** (`AnalysisRunner`) : l'appli lance `mslice-mcp --analyze <fichier>` (JSON de progression sur la sortie standard, « cancel », « pause », « resume » sur l'entrée standard ; il s'arrête si l'appli disparaît).
+  Vision et SoundAnalysis chargent ≈ 30 Mo de modèles qu'elles ne rendent pas : dans un processus à part, tout revient au système à la fin (l'appli garde la même empreinte avant et après), et un plantage d'un modèle d'Apple
+  ne touche pas l'appli. Une analyse à la fois, qualité de service « utilitaire », pause pendant la lecture et l'export. Mesuré : 28 min en 25 s, 58 Mo de pic dans le processus d'analyse, 0 % processeur au repos.
+- **Index** (`AnalysisIndex`) : `Application Support/mSLICE[ DEV]/index/<clé>.msidx` (même clé que les sessions), liste de propriétés binaire versionnée, ≈ 6 Ko par minute ; un index tronqué, d'une autre version ou
+  incohérent est refusé. Il garde les coupures, les meilleures étiquettes par échantillon d'image et par fenêtre de son.
+- **Familles** (`Families.swift`) : 45 familles de scènes et 42 de sons (toutes les étiquettes de macOS y sont classées ou cherchables par leur nom brut), traduites dans les 4 langues ; l'essai vérifie qu'aucune étiquette citée n'est inconnue.
+- **Requêtes** (`Finder`) : grille de 0,5 s, seuils (image 0,35 ; son 0,5), critères **ET** (intersection) et **SAUF** (un passage qui en chevauche un reste listé « écarté » mais n'entre pas dans les morceaux), trous de moins de 1,5 s comblés,
+  passages de moins de 1 s écartés, « plans entiers » (calage sur les coupures) ou marge de 0,3 s, passages voisins (moins de 1,5 s) réunis en un morceau.
+- **Interface** (`FindModel`, `FindPanel`, onglet Édition | Trouver | Agent) : avant l'analyse, en cours (annulable), résultats (scènes, sons, carte « Personnages »), sélection avec passages (vignettes à la demande, cases à cocher),
+  « Ajouter N morceaux » (annulable d'un coup par ⌘Z), piste de résultats de 14 pt sous la forme d'onde (un clic va au début du passage).
+- **Modèle externe optionnel** (`ModelStore`) pour les personnages (macOS n'expose aucune identité de visage ; l'empreinte générique d'Apple mélange les personnes) : jamais embarqué, téléchargé seulement avec l'accord de
+  l'utilisateur, HTTPS seulement, taille plafonnée, empreinte SHA-256 vérifiée (et recalculée avant tout usage), installation atomique, suppression à tout moment. Tant qu'aucun modèle n'est retenu (étape « Essai des modèles » :
+  licence, taille, qualité), `ModelCatalog.characters.url` reste vide et la carte l'indique au lieu de proposer un téléchargement.
+- **Agent** : `analyze_media` (plans, familles de scènes et de sons trouvées, avec leurs identifiants) et `find_scenes` (`include` ET, `exclude` SAUF, `whole_shots`, `apply` = none / add / set ; critères `scene:`, `sound:`, `label:`,
+  `sound_label:`). Mêmes garde-fous (aucun fichier écrit, aucun morceau supprimé par un ajout). Essais : `--selftest-analysis`, `--selftest-ui` (onglet et pont), `scripts/mcp_e2e.py` (index synthétique pour les combinaisons).
+

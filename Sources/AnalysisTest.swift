@@ -1,5 +1,6 @@
 // mSLICE — essai `--selftest-analysis <fichier>` : analyse native sans fenêtre (vocabulaires, index, requêtes, précision des plans, temps, mémoire, annulation, pause).
 import AppKit
+import CryptoKit
 import Foundation
 import SoundAnalysis
 import Vision
@@ -183,6 +184,49 @@ enum AnalysisTest {
         }
 
         AnalysisStore.remove(info)
+
+        // 9. modèle optionnel : téléchargement vérifié, refus d'une empreinte ou d'une taille fausse, adresses non sûres refusées, suppression
+        do {
+            let serve = tmp.appendingPathComponent("serve"); try? FileManager.default.createDirectory(at: serve, withIntermediateDirectories: true)
+            var payload = Data(count: 700_000); payload.withUnsafeMutableBytes { raw in for i in 0 ..< raw.count { raw[i] = UInt8(truncatingIfNeeded: i &* 31 &+ (i >> 8)) } }
+            try? payload.write(to: serve.appendingPathComponent("model.bin"))
+            let sha = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+            let port = 47_500 + Int.random(in: 0 ..< 400)
+            let py = Process(); py.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            py.arguments = ["-m", "http.server", "\(port)", "--bind", "127.0.0.1", "--directory", serve.path]
+            py.standardOutput = FileHandle.nullDevice; py.standardError = FileHandle.nullDevice
+            if (try? py.run()) != nil {
+                defer { py.terminate() }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                let url = URL(string: "http://127.0.0.1:\(port)/model.bin")!
+                let store = ModelStore.shared
+                func wait(_ spec: ModelSpec) async -> ModelStore.State { for _ in 0 ..< 100 { if case .downloading = store.state(spec) { try? await Task.sleep(nanoseconds: 100_000_000) } else { break } }; return store.state(spec) }
+                let ok = ModelSpec(id: "test-ok-\(UUID().uuidString.prefix(5))", sizeMB: 1, url: url, sha256: sha, license: "test")
+                check(!ModelStore.isInstalled(ok) && store.state(ok) == .notInstalled, "modèle optionnel : absent au départ")
+                store.install(ok)
+                let st = await wait(ok)
+                check(st == .installed && (try? Data(contentsOf: ModelStore.file(ok))) == payload && ModelStore.isInstalled(ok), "modèle optionnel : téléchargé, empreinte vérifiée, installé (\(st))")
+                let bad = ModelSpec(id: "test-bad-\(UUID().uuidString.prefix(5))", sizeMB: 1, url: url, sha256: String(repeating: "0", count: 64), license: "test")
+                store.install(bad)
+                let stBad = await wait(bad)
+                check({ if case .failed = stBad { return true }; return false }() && !FileManager.default.fileExists(atPath: ModelStore.folder(bad).path), "modèle optionnel : mauvaise empreinte refusée, rien d'installé (\(stBad))")
+                let big = ModelSpec(id: "test-big-\(UUID().uuidString.prefix(5))", sizeMB: 0, url: url, sha256: sha, license: "test")
+                store.install(big)
+                let stBig = await wait(big)
+                check({ if case .failed = stBig { return true }; return false }() && !FileManager.default.fileExists(atPath: ModelStore.folder(big).path), "modèle optionnel : fichier plus gros que annoncé refusé (\(stBig))")
+                check(ModelStore.verified(ok), "modèle optionnel : empreinte recalculée conforme avant usage")
+                var tamper = (try? Data(contentsOf: ModelStore.file(ok))) ?? Data(); if !tamper.isEmpty { tamper[0] ^= 0xff }
+                try? tamper.write(to: ModelStore.file(ok))
+                check(ModelStore.isInstalled(ok) && !ModelStore.verified(ok), "modèle optionnel : fichier modifié après installation (même taille) détecté par l'empreinte")
+                try? Data("tronqué".utf8).write(to: ModelStore.file(ok))
+                check(!ModelStore.isInstalled(ok), "modèle optionnel : fichier tronqué : non installé")
+                store.remove(ok)
+                check(!FileManager.default.fileExists(atPath: ModelStore.folder(ok).path) && store.state(ok) == .notInstalled, "modèle optionnel : supprimé")
+                for s in [bad, big] { store.remove(s) }
+            } else { check(false, "serveur local de l'essai (python3)") }
+            check(ModelStore.allowed(URL(string: "https://example.com/m.bin")!) && ModelStore.allowed(URL(string: "http://127.0.0.1:1/m")!) && !ModelStore.allowed(URL(string: "http://example.com/m.bin")!) && !ModelStore.allowed(URL(string: "ftp://example.com/m")!) && !ModelStore.allowed(URL(string: "file:///etc/passwd")!), "modèle optionnel : HTTPS seulement (HTTP uniquement vers ce Mac)")
+            check(!ModelCatalog.characters.available && ModelStore.shared.state(ModelCatalog.characters) == .notInstalled, "modèle des personnages : pas encore retenu, aucun téléchargement proposé")
+        }
 
         print(failures == 0 ? "TOUT EST OK" : "\(failures) échec(s)")
         return failures == 0 ? 0 : 1

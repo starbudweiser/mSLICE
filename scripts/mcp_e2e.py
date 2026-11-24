@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Essai de bout en bout de mslice-mcp, SANS l'appli ouverte (mode autonome) : protocole MCP, garde-fous, découpe, fusion, silences.
 Usage : scripts/mcp_e2e.py [chemin/mslice-mcp]   (défaut : « mSLICE DEV.app »). Active puis rétablit le réglage « Autoriser un agent » de l'édition DEV."""
-import json, os, subprocess, sys, tempfile, shutil, time
+import json, os, plistlib, struct, subprocess, sys, tempfile, shutil, time, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "..", "mSLICE DEV.app")
@@ -19,7 +19,8 @@ prev = defaults("read", DOMAIN, "agent.enabled")
 prev_val = prev.stdout.strip() if prev.returncode == 0 else None
 
 work = tempfile.mkdtemp(prefix="mslice-e2e-")
-env = dict(os.environ, MSLICE_SESSION_DIR=os.path.join(work, "sessions"), MSLICE_AGENT_SOCKET=os.path.join(work, "none.sock"))
+idxdir = os.path.join(work, "index")
+env = dict(os.environ, MSLICE_SESSION_DIR=os.path.join(work, "sessions"), MSLICE_AGENT_SOCKET=os.path.join(work, "none.sock"), MSLICE_INDEX_DIR=idxdir)
 proc = None
 try:
     # fixtures : 30 s de vidéo avec son (bip toutes les 5 s dans un silence), et un fichier audio « 4 s de silence, 4 s de son, 4 s de silence »
@@ -49,7 +50,7 @@ try:
     check(r["serverInfo"]["name"] == "mslice" and "tools" in r["capabilities"], "initialize : serveur « mslice »")
     rpc("notifications/initialized", notify=True)
     tools = [t["name"] for t in rpc("tools/list")["result"]["tools"]]
-    check(len(tools) >= 15 and "export" in tools and "get_frame" in tools, f"tools/list : {len(tools)} outils")
+    check(len(tools) >= 19 and "export" in tools and "get_frame" in tools and "analyze_media" in tools and "find_scenes" in tools, f"tools/list : {len(tools)} outils")
 
     err, txt, _ = call("get_state")
     check(err and "off" in str(txt), "désactivé par défaut : l'agent est refusé avec une explication")
@@ -130,6 +131,91 @@ try:
     check(not err and any(c["type"] == "image" and len(c["data"]) > 500 for c in raw["content"]), "get_frame : image PNG renvoyée")
     err, t, _ = call("seek", time=3)
     check(err and "not open" in str(t), "seek sans appli : refus explicite")
+
+    # ---- analyse et recherche de scènes (analyze_media, find_scenes) ----
+    cuts = os.path.join(work, "plans.mp4")        # trois plans de 4 s, coupures franches à 4 s et 8 s
+    subprocess.run([FFMPEG, "-nostdin", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=4", "-f", "lavfi", "-i", "color=c=navy:s=320x180:r=25:d=4",
+                    "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:duration=4", "-f", "lavfi", "-i", "sine=frequency=440:duration=12",
+                    "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]", "-map", "[v]", "-map", "3:a", "-c:v", "h264_videotoolbox", "-b:v", "400k", "-c:a", "aac_at", "-shortest", cuts], check=True)
+    err, an, _ = call("analyze_media", path=cuts)
+    check(not err and an.get("shots") == 3 and an["has_video"] and an["has_audio"] and an["analyzed_now"] is True and isinstance(an["scenes"], list) and isinstance(an["sounds"], list), f"analyze_media : {an.get('shots')} plans (3 attendus), {an.get('analysis_seconds')} s" if not err else f"analyze_media : {an}")
+    err, an2, _ = call("analyze_media", path=cuts)
+    check(not err and an2["analyzed_now"] is False and an2["shots"] == 3, "analyze_media : résultat gardé, relu sans recalcul")
+    err, t, _ = call("analyze_media", path=os.path.join(work, "inconnu.mp4"))
+    check(err and "not found" in str(t).lower(), "analyze_media : fichier absent, erreur claire")
+    err, t, _ = call("analyze_media", path=vid + "\nx")
+    check(err, "analyze_media : chemin avec saut de ligne refusé")
+    err, an3, _ = call("analyze_media", path=aud)
+    check(not err and an3["has_audio"] and not an3["has_video"] and "shots" not in an3, "analyze_media : fichier audio seul (sons seulement)")
+    # index synthétique : résultats déterministes pour les combinaisons ET / SAUF (feu 10-16 s, personnes 3-27 s sauf 20-21 s, musique 22-30 s, rire 18-21 s ; coupures à 8, 15 et 24 s)
+    err, pm, _ = call("probe_media", path=vid)
+    files = [f for f in os.listdir(idxdir) if f.endswith(".msidx")]
+    base_key = None
+    err, _a, _ = call("analyze_media", path=vid)
+    files2 = [f for f in os.listdir(idxdir) if f.endswith(".msidx")]
+    vid_idx = [f for f in files2 if f not in files][0]
+    dur = pm["duration"]
+    sc_off, sc_lab, sc_conf = [0], [], []
+    for k in range(int(dur / 0.5)):
+        t0 = k * 0.5
+        if 10 <= t0 < 16: sc_lab.append(0); sc_conf.append(230)
+        if 3 <= t0 < 27 and not (20 <= t0 < 21): sc_lab.append(1); sc_conf.append(200)
+        sc_off.append(len(sc_lab))
+    so_off, so_lab, so_conf, so_start = [0], [], [], []
+    for k in range(int(dur / 0.5) - 2):
+        start = k * 0.5; centre = start + 0.75
+        so_start.append(start)
+        if 22 <= centre < 30: so_lab.append(0); so_conf.append(220)
+        if 18 <= centre < 21: so_lab.append(1); so_conf.append(200)
+        so_off.append(len(so_lab))
+    stored = {"version": 1, "duration": dur, "created": datetime.datetime.now(), "seconds": 1.0, "hasVideo": True, "hasAudio": True,
+              "cuts": struct.pack("<3d", 8.0, 15.0, 24.0), "sceneStep": 0.5, "sceneLabels": ["fire", "people"],
+              "sceneOffsets": struct.pack("<%di" % len(sc_off), *sc_off), "sceneLabelIdx": struct.pack("<%dH" % len(sc_lab), *sc_lab), "sceneConf": bytes(sc_conf),
+              "soundWindow": 1.5, "soundHop": 0.5, "soundLabels": ["music", "laughter"], "soundStarts": struct.pack("<%df" % len(so_start), *so_start),
+              "soundOffsets": struct.pack("<%di" % len(so_off), *so_off), "soundLabelIdx": struct.pack("<%dH" % len(so_lab), *so_lab), "soundConf": bytes(so_conf)}
+    with open(os.path.join(idxdir, vid_idx), "wb") as fh: plistlib.dump(stored, fh, fmt=plistlib.FMT_BINARY)
+    err, an4, _ = call("analyze_media", path=vid)
+    ids = {r["id"]: r for r in an4["scenes"] + an4["sounds"]} if not err else {}
+    check(not err and an4["analyzed_now"] is False and an4["shots"] == 4 and "scene:fire" in ids and "sound:music" in ids and "sound:laugh" in ids, f"analyze_media : index synthétique relu ({sorted(ids)})")
+    err, fs, _ = call("find_scenes", path=vid, include=["scene:fire"], whole_shots=False)
+    check(not err and fs["passages_kept"] == 1 and abs(fs["passages"][0]["start"] - 9.7) < 0.05 and abs(fs["passages"][0]["end"] - 16.3) < 0.05 and fs.get("applied") is None, f"find_scenes feu, marge 0,3 s : {[(p['start'], p['end']) for p in fs['passages']]}" if not err else f"find_scenes : {fs}")
+    err, fs, _ = call("find_scenes", path=vid, include=["scene:fire"])
+    check(not err and fs["passages"][0]["start"] == 8 and fs["passages"][0]["end"] == 24, f"find_scenes feu, plans entiers : calé sur les coupures {fs['passages'][0]['start']} → {fs['passages'][0]['end']}")
+    err, fs, _ = call("find_scenes", path=vid, include=["scene:people", "scene:fire"], whole_shots=False)
+    check(not err and fs["passages_kept"] == 1 and abs(fs["passages"][0]["start"] - 9.7) < 0.05, "find_scenes personnes ET feu : intersection")
+    err, fs, _ = call("find_scenes", path=vid, include=["scene:people"], exclude=["sound:music"])
+    check(not err and fs["passages"][0].get("excluded_by") and fs["passages_kept"] == 0 and fs["kept_seconds"] == 0, f"find_scenes personnes SAUF musique : passage écarté ({fs['passages'][0].get('excluded_by') if not err else fs})")
+    err, fs, _ = call("find_scenes", path=vid, include=["scene:people"], exclude=["scene:fire"], whole_shots=False)
+    check(not err and fs["passages_kept"] == 0 and fs["passages"][0].get("excluded_by"), "find_scenes SAUF feu : le passage des personnes qui contient le feu est écarté")
+    err, fs, _ = call("find_scenes", path=vid, include=["scene:fire"], whole_shots=False, apply="set")
+    err2, g, _ = call("get_segments", path=vid)
+    check(not err and fs["applied"] == "set" and not err2 and g["count"] == 1 and abs(g["segments"][0]["start"] - 9.7) < 0.05, "find_scenes apply=set : les morceaux sont posés")
+    err, fs, _ = call("find_scenes", path=vid, include=["sound:laugh"], whole_shots=False, apply="add")
+    err2, g, _ = call("get_segments", path=vid)
+    check(not err and fs["applied"] == "add" and not err2 and g["count"] == 2 and g["segments"][0]["start"] < g["segments"][1]["start"], f"find_scenes apply=add : ajouté aux morceaux existants ({g['count']} morceaux)")
+    err, fs, _ = call("find_scenes", path=vid, include=["sound:music"], exclude=["scene:fire"], whole_shots=False, apply="add")
+    err2, g, _ = call("get_segments", path=vid)
+    check(not err and g["count"] >= 2, "find_scenes : aucun morceau supprimé par un ajout (jamais de suppression de morceau existant)")
+    err, fs, _ = call("find_scenes", path=vid, include=["label:dragon"])
+    check(not err and fs["passages_found"] == 0 and fs.get("notes"), "find_scenes label inconnu : aucun passage, avec une note")
+    err, t, _ = call("find_scenes", path=vid, include=["scene:dragon"])
+    check(err and "Unknown scene family" in str(t) and "fire" in str(t), "find_scenes famille inconnue : erreur avec la liste des familles")
+    err, t, _ = call("find_scenes", path=vid, include=["n'importe quoi"])
+    check(err and "Bad criterion" in str(t), "find_scenes critère mal formé : erreur claire")
+    err, t, _ = call("find_scenes", path=vid, include=[])
+    check(err and "include" in str(t), "find_scenes sans critère : refusé")
+    err, t, _ = call("find_scenes", path=vid, include=["scene:fire"], apply="delete")
+    check(err and "apply" in str(t), "find_scenes apply invalide : refusé")
+    err, t, _ = call("find_scenes", path=vid, include=["scene:" + "x" * 5000])
+    check(err and proc.poll() is None, "find_scenes critère géant : erreur propre, serveur vivant")
+    err, t, _ = call("find_scenes", path=aud, include=["scene:fire"])
+    check(err and "no video" in str(t), "find_scenes critère d'image sur un fichier audio : refusé clairement")
+    err, t, _ = call("find_scenes", path=vid, include=["sound:laugh"], min_sound_score="nan")
+    check(proc.poll() is None, "find_scenes : seuil NaN sans plantage")
+    err, t, _ = call("find_scenes", path=vid, include=["scene:fire"], min_length=1e30, whole_shots=False)
+    check(not err and proc.poll() is None and t["passages_found"] == 0, "find_scenes : durée minimale géante bornée (aucun passage, pas de plantage)")
+    check(all(f.endswith((".mp4", ".mp3", ".wav")) for f in os.listdir(work) if os.path.isfile(os.path.join(work, f))), "analyse : aucun fichier ajouté hors dossier d'index")
+    check(os.path.exists(cuts) and os.path.exists(vid), "analyse : originaux intacts")
 finally:
     if proc:
         proc.stdin.close(); proc.wait(timeout=5)

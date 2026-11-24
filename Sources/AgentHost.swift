@@ -24,6 +24,7 @@ final class AppAgentHost: AgentHost {
     func seek(_ t: Double) { model.player.pause(); model.player.seek(t); model.current?.ensureVisible(t) }
     func notify(_ text: String) { model.flash(text) }
     func userExportFolder() -> String? { model.opts.folder }
+    func analyze(_ url: URL, force: Bool) async -> AnalysisIndex? { await doc(url)?.find.analyzeAndWait(force: force) }
 }
 
 /// Prise Unix locale : une ligne JSON par appel `{tool, args, client}`, une ligne de réponse `{content, isError}`.

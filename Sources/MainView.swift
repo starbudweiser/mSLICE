@@ -262,7 +262,9 @@ struct TransportBar: View {
 struct TimelineCard: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
+    @ObservedObject private var find: FindModel      // la piste de résultats ajoute sa hauteur à la timeline
     let player: PlayerModel          // pas observé : la tête de lecture est un calque qui se met à jour seul
+    init(model: AppModel, doc: Doc, player: PlayerModel) { self.model = model; self.doc = doc; self.player = player; self.find = doc.find }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -274,7 +276,7 @@ struct TimelineCard: View {
                 Button { Task { await autoTrim() } } label: { Chip(text: L.t("tl.auto"), enabled: doc.info.audio != nil) }.buttonStyle(.plain)
                 Spacer(minLength: 0)
             }.frame(height: 26).padding(.bottom, 4)
-            TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.totalH)
+            TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.height(lane: !find.lane.isEmpty))
             HStack(spacing: 10) {
                 legend("I", L.t("key.in")); legend("O", L.t("key.out")); legend("Espace", L.t("key.play")); legend("J K L", L.t("key.speed"))
                 legend("← →", L.t("key.frame")); legend("↑ ↓", L.t("key.keyframe")); legend("⌫", L.t("key.delete"))
@@ -310,12 +312,14 @@ struct TimelineCard: View {
 struct RightPanel: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
-    @AppStorage("rightTab") private var tab = 0          // 0 : morceaux et export, 1 : discussion avec l'agent
+    @AppStorage("rightTab") private var tab = 0          // 0 : morceaux et export, 1 : discussion avec l'agent, 2 : Trouver
     var body: some View {
         VStack(spacing: 10) {
-            Segmented(options: [(0, L.t("agent.tab.edit")), (1, L.t("agent.title"))], selection: $tab)
+            Segmented(options: [(0, L.t("agent.tab.edit")), (2, L.t("find.title")), (1, L.t("agent.title"))], selection: $tab)
             if tab == 1 {
                 AgentPanel(model: model, chat: AgentChat.shared)
+            } else if tab == 2 {
+                FindPanel(model: model, doc: doc, find: doc.find, openEdit: { tab = 0 })
             } else {
                 // Les cartes défilent si la fenêtre est basse ou les morceaux nombreux ; le bouton « Extraire » reste en bas.
                 ScrollView(.vertical, showsIndicators: false) {

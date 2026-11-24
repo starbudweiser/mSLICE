@@ -1,5 +1,6 @@
 // mSLICE — un fichier ouvert (morceaux, bistouri I / O, annulation, mémoire de session) et l'état général de l'appli.
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -20,6 +21,8 @@ final class Doc: ObservableObject, Identifiable {
     let strip: Filmstrip
     let cancel = CancelToken()
     var onSegmentsChange: (() -> Void)?
+    /// Onglet « Trouver » : analyse du fichier, critères, passages (créé à la première demande).
+    lazy var find = FindModel(doc: self)
     private var undoStack: [[Segment]] = []
     private var saveWork: DispatchWorkItem?
 
@@ -163,9 +166,12 @@ final class AppModel: ObservableObject {
     let player = PlayerModel()
     weak var mainWindow: NSWindow?
     var testMode = false          // essais sans fenêtre : les touches simulées sont acceptées sans fenêtre active
+    private var gateSink: AnyCancellable?
 
     init() {
         if let d = UserDefaults.standard.data(forKey: "export.opts"), let o = try? JSONDecoder().decode(ExportOptions.self, from: d) { opts = o } else { opts = ExportOptions() }
+        // L'analyse cède le processeur à la lecture et à l'export, puis reprend toute seule.
+        gateSink = Publishers.CombineLatest(player.$isPlaying, $sheet).sink { playing, sheet in AnalysisGate.shared.paused = playing || sheet == .export }
     }
 
     // MARK: Ouverture
@@ -194,7 +200,7 @@ final class AppModel: ObservableObject {
     }
 
     func close(_ d: Doc) {
-        d.cancel.cancel()
+        d.cancel.cancel(); d.find.cancel()
         docs.removeAll { $0 === d }
         if current === d { current = nil; player.pause(); if let n = docs.first { select(n) } }
     }

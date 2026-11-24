@@ -6,6 +6,10 @@ import SwiftUI
 final class TimelineView: NSView {
     static let rulerH: CGFloat = 26, filmH: CGFloat = 42, waveH: CGFloat = 88, gap: CGFloat = 4
     static let totalH: CGFloat = rulerH + gap + filmH + gap + waveH
+    /// Piste fine de résultats (onglet « Trouver ») sous la forme d'onde.
+    static let laneH: CGFloat = 14
+    static func height(lane: Bool) -> CGFloat { lane ? totalH + gap + laneH : totalH }
+    private var hasLane: Bool { !(doc?.find.lane.isEmpty ?? true) }
 
     var doc: Doc? { didSet { bind() } }
     var player: PlayerModel? { didSet { bind() } }
@@ -42,6 +46,7 @@ final class TimelineView: NSView {
         player.$time.receive(on: RunLoop.main).sink { [weak self] t in self?.setPlayhead(t) }.store(in: &cancellables)
         doc.peaks.onChange = { [weak self] in self?.needsDisplay = true }
         doc.strip.onChange = { [weak self] in self?.needsDisplay = true }
+        doc.find.$lane.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)
         needsDisplay = true; setPlayhead(player.time)
     }
 
@@ -59,7 +64,7 @@ final class TimelineView: NSView {
         if player?.isPlaying == true, t > d.viewStart + d.viewSpan * 0.98 || t < d.viewStart { d.ensureVisible(t) }
         let px = x(t)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        playLayer.frame = CGRect(x: px - 1, y: 0, width: 2, height: TimelineView.totalH)
+        playLayer.frame = CGRect(x: px - 1, y: 0, width: 2, height: max(bounds.height, TimelineView.totalH))
         let label = Fmt.time(t) as NSString
         bubble.string = label
         let w = label.size(withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .semibold)]).width + 12
@@ -161,6 +166,31 @@ final class TimelineView: NSView {
             ctx.setFillColor(Theme.segNS.cgColor); ctx.addPath(keptPath); ctx.fillPath()
         }
 
+        // Piste de résultats : un trait par passage (accent), les passages écartés par SAUF en gris
+        if let lane = doc?.find.lane, !lane.isEmpty {
+            let laneY = waveY + TimelineView.waveH + TimelineView.gap
+            let laneRect = CGRect(x: 0, y: laneY, width: w, height: TimelineView.laneH)
+            ctx.setFillColor(Theme.textNS.withAlphaComponent(0.05).cgColor)
+            ctx.addPath(CGPath(roundedRect: laneRect, cornerWidth: 4, cornerHeight: 4, transform: nil)); ctx.fillPath()
+            ctx.saveGState(); ctx.addPath(CGPath(roundedRect: laneRect, cornerWidth: 4, cornerHeight: 4, transform: nil)); ctx.clip()
+            for p in lane where p.end >= t0 && p.start <= t1 {
+                let r = CGRect(x: x(p.start), y: laneY + 3, width: max(x(p.end) - x(p.start), 2), height: TimelineView.laneH - 6)
+                ctx.setFillColor(p.excluded ? text2.withAlphaComponent(0.35).cgColor : Theme.accentNS.cgColor)
+                ctx.addPath(CGPath(roundedRect: r, cornerWidth: 2, cornerHeight: 2, transform: nil)); ctx.fillPath()
+            }
+            ctx.restoreGState()
+            if let f = doc?.find {
+                let label = f.ordered.map(\.name).joined(separator: " · ").uppercased() as NSString
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9.5, weight: .semibold), .foregroundColor: text2, .kern: 0.3]
+                let sz = label.size(withAttributes: attrs)
+                if sz.width < w * 0.5 {
+                    let bgR = CGRect(x: w - sz.width - 12, y: laneY, width: sz.width + 10, height: TimelineView.laneH)
+                    ctx.setFillColor(Theme.cardNS.withAlphaComponent(0.85).cgColor); ctx.fill(bgR)
+                    label.draw(at: NSPoint(x: bgR.minX + 5, y: laneY + (TimelineView.laneH - sz.height) / 2), withAttributes: attrs)
+                }
+            }
+        }
+
         // Zones retirées : voile + hachures
         let bodyTop = filmY, bodyH = TimelineView.filmH + TimelineView.gap + TimelineView.waveH
         var edges: [Double] = [0] + d.segments.flatMap { [$0.start, $0.end] } + [d.duration]
@@ -248,6 +278,10 @@ final class TimelineView: NSView {
             d.snapshot(); dragEdge = (id, start); d.selected = id; return
         }
         let t = time(pt.x)
+        let laneY = TimelineView.totalH + TimelineView.gap
+        if hasLane, pt.y >= laneY - 2, let hit = d.find.lane.first(where: { t >= $0.start - 3 * d.viewSpan / Double(max(bounds.width, 1)) && t <= $0.end + 3 * d.viewSpan / Double(max(bounds.width, 1)) }) {
+            p.pause(); p.seek(hit.start); scrubbing = false; return           // un clic sur un passage amène la tête de lecture à son début
+        }
         if pt.y > TimelineView.rulerH, let s = d.segment(at: t) { d.selected = s.id }
         scrubbing = true; p.pause(); p.seek(t, precise: false)
     }

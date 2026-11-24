@@ -433,6 +433,73 @@ enum UITest {
             } else { check(false, "mslice-mcp introuvable dans le paquet") }
         }
 
+        // onglet Trouver : analyse par le modèle de l'onglet (annulable), critères ET / SAUF, piste de résultats, ajout aux morceaux (⌘Z), outils d'agent en direct
+        do {
+            let idxDir = FileManager.default.temporaryDirectory.appendingPathComponent("mslice-uiindex-\(UUID().uuidString.prefix(6))")      // hors du dossier d'export de l'essai
+            setenv("MSLICE_INDEX_DIR", idxDir.path, 1)
+            defer { unsetenv("MSLICE_INDEX_DIR"); try? FileManager.default.removeItem(at: idxDir) }
+            AnalysisStore.remove(d.info)
+            d.segments = []; d.selected = nil
+            let find = d.find
+            check(!find.hasIndex || find.index != nil, "Trouver : modèle de l'onglet créé")
+            find.start()
+            await wait(1.5)
+            check(find.running && find.progress.fraction > 0, "Trouver : analyse en cours (\(Int(find.progress.fraction * 100)) %, mémoire du processus d'analyse \(Int(find.progress.memoryMB)) Mo)")
+            Perf.mark("analyse en cours (appli)")
+            find.cancel()
+            for _ in 0 ..< 60 { if !find.running { break }; await wait(0.2) }
+            check(!find.running && !find.hasIndex && !find.failed, "Trouver : annulation (aucun résultat, pas d'erreur affichée)")
+            let t0 = Date()
+            let idx = await find.analyzeAndWait(force: false)
+            Perf.mark("analyse terminée (appli)")
+            check(idx != nil && find.hasIndex && !find.summary.scenes.isEmpty && !find.summary.sounds.isEmpty, "Trouver : analyse de \(Fmt.time(d.duration, decimals: false)) en \(String(format: "%.0f", Date().timeIntervalSince(t0))) s (\(find.summary.scenes.count) familles de scènes, \(find.summary.sounds.count) de sons, \(idx?.shotCount ?? 0) plans)")
+            if let row = find.summary.scenes.first(where: { $0.term.key == "clothing" }) ?? find.summary.scenes.first {
+                find.add(row.term)
+                let n = find.result.passages.count
+                check(n > 0 && find.lane.count == n && !find.terms.isEmpty, "Trouver : critère « \(row.term.name) » → \(n) passages, piste de résultats \(find.lane.count) traits")
+                let wholeTotal = find.result.passages.reduce(0.0) { $0 + $1.duration }
+                find.wholeShots = false
+                let marginTotal = find.result.passages.reduce(0.0) { $0 + $1.duration }
+                check(find.result.passages.count >= n && marginTotal <= wholeTotal + 1, "Trouver : sans « plans entiers » les passages sont plus justes (\(Int(wholeTotal)) s → \(Int(marginTotal)) s)")
+                find.wholeShots = true
+                if let music = find.summary.sounds.first(where: { $0.term.key == "music" }) {
+                    var neg = music.term; neg.exclude = true; find.add(neg)
+                    check(find.result.passages.contains { $0.excludedBy != nil } && find.pieces.count < find.result.passages.count, "Trouver : SAUF musique écarte des passages (\(find.keptCount)/\(find.result.passages.count) gardés)")
+                    find.remove(neg)
+                }
+                if let first = find.result.passages.first(where: { $0.excludedBy == nil }) {
+                    find.toggle(first)
+                    check(!find.isChecked(first), "Trouver : un passage décoché sort des morceaux")
+                    find.toggle(first)
+                }
+                let expected = find.pieces
+                find.addToPieces()
+                check(d.segments.count == expected.count && find.added?.count == expected.count && find.terms.isEmpty && find.lane.isEmpty, "Trouver : \(expected.count) morceaux ajoutés à la timeline, sélection vidée")
+                check(d.segments.first.map { abs($0.start - (expected.first?.start ?? -1)) < 0.001 } ?? false, "Trouver : les morceaux ajoutés sont ceux de la liste")
+                d.undo()
+                check(d.segments.isEmpty, "Trouver : ⌘Z retire d'un coup tous les morceaux ajoutés")
+            } else { check(false, "Trouver : aucune famille de scène reconnue") }
+
+            // outils d'agent en direct : find_scenes pose les morceaux dans la timeline ouverte, analyze_media relit le résultat sans recalcul
+            let sock = FileManager.default.temporaryDirectory.appendingPathComponent("ms-\(UUID().uuidString.prefix(6)).sock").path
+            AgentServer.shared.stop(); setenv("MSLICE_AGENT_SOCKET", sock, 1); AgentServer.shared.start()
+            let prevEnabled = UserDefaults.standard.object(forKey: "agent.enabled")
+            defer { AgentServer.shared.stop(); unsetenv("MSLICE_AGENT_SOCKET"); if let p = prevEnabled { UserDefaults.standard.set(p, forKey: "agent.enabled") } else { UserDefaults.standard.removeObject(forKey: "agent.enabled") } }
+            UserDefaults.standard.set(true, forKey: "agent.enabled")
+            if let mcp = MCPProc(env: ["MSLICE_AGENT_SOCKET": sock, "MSLICE_INDEX_DIR": idxDir.path]) {
+                _ = await mcp.rpc("initialize", ["protocolVersion": "2025-03-26", "capabilities": [String: Any](), "clientInfo": ["name": "essai-trouver", "version": "1"]])
+                let an = await mcp.tool("analyze_media", ["path": d.url.path])
+                check(!an.error && an.json?["analyzed_now"] as? Bool == false && (an.json?["shots"] as? Int ?? 0) > 100, "agent : analyze_media relit l'analyse de l'appli sans recalcul (\(an.json?["shots"] ?? "?") plans)")
+                let fs = await mcp.tool("find_scenes", ["path": d.url.path, "include": ["scene:clothing"], "exclude": ["sound:music"], "apply": "set"])
+                check(!fs.error && fs.json?["live_in_app"] as? Bool == true && d.segments.count > 0 && d.segments.count == fs.json?["count"] as? Int, "agent : find_scenes pose \(d.segments.count) morceaux en direct dans la timeline")
+                let again = await mcp.tool("find_scenes", ["path": d.url.path, "include": ["scene:clothing"], "exclude": ["sound:music"]])
+                check(!again.error && again.json?["applied"] == nil && d.segments.count == fs.json?["count"] as? Int, "agent : find_scenes sans apply ne touche pas aux morceaux")
+                mcp.stop()
+            } else { check(false, "mslice-mcp introuvable dans le paquet") }
+            d.segments = []; d.selected = nil
+            find.clear()
+        }
+
         // panneau de discussion : boucle d'outils des moteurs API, contre un faux service local (MSLICE_TEST_LLM=http://127.0.0.1:port)
         if let llm = ProcessInfo.processInfo.environment["MSLICE_TEST_LLM"] {
             let ud = UserDefaults.standard

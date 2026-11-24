@@ -249,6 +249,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let t = self.arg("--time").flatMap(Double.init) { model.player.seek(t) }
             }
             if self.arg("--state") == "shortcuts" { model.showShortcuts = true }
+            if let st = self.arg("--state"), st.hasPrefix("find"), let d = model.current {         // onglet Trouver : find-before | find-running | find-results | find-choice | find-added
+                let ud = UserDefaults.standard
+                self.restoreAfterCapture = { ud.removeObject(forKey: "rightTab") }
+                ud.set(2, forKey: "rightTab")
+                switch st {
+                case "find-before": break
+                case "find-running": d.find.start()
+                default:
+                    Task { @MainActor in
+                        _ = await d.find.analyzeAndWait(force: false)
+                        if st == "find-choice" || st == "find-added" {
+                            let spec = self.arg("--find") ?? "scene:clothing"       // ex. « scene:clothing,!sound:music » (! : SAUF)
+                            for part in spec.split(separator: ",") { if let t = FindTerm.parse(String(part.drop { $0 == "!" }), exclude: part.hasPrefix("!")) { d.find.add(t) } }
+                            if let w = self.arg("--whole") { d.find.wholeShots = w != "0" }
+                        }
+                        if st == "find-added" { d.find.addToPieces() }
+                    }
+                }
+            }
             if let st = self.arg("--state"), st.hasPrefix("agent") {          // panneau de discussion (réglages restaurés après la capture)
                 let ud = UserDefaults.standard
                 self.restoreAfterCapture = { ud.removeObject(forKey: "rightTab"); ud.removeObject(forKey: "agent.enabled") }

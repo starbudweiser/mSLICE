@@ -42,6 +42,8 @@ enum AgentJSON {
     func seek(_ t: Double)
     func notify(_ text: String)
     func userExportFolder() -> String?
+    /// Analyse d'un fichier ouvert dans l'appli : la progression s'affiche dans l'onglet « Trouver ». nil si elle échoue ou est annulée.
+    func analyze(_ url: URL, force: Bool) async -> AnalysisIndex?
 }
 
 struct ToolDef {
@@ -53,7 +55,7 @@ struct ToolDef {
         var props: [String: Any] = [:]
         for (n, t, d) in properties {
             var p: [String: Any] = ["type": t, "description": d]
-            if t == "array" { p["items"] = n == "paths" ? ["type": "string"] : ["type": "object"] }
+            if t == "array" { p["items"] = ["paths", "include", "exclude"].contains(n) ? ["type": "string"] : ["type": "object"] }
             props[n] = p
         }
         return ["type": "object", "properties": props, "required": required]
@@ -68,6 +70,7 @@ enum Agent {
     static let instructions = """
     mSLICE trims audio and video: the user marks pieces to keep in a file, then exports them as numbered files or as one merged file, with direct stream copy (no re-encoding, instant, lossless) or re-encoded. \
     Typical flow: probe_media -> (find_silences / get_frame to decide) -> set_segments (or trim_edges / trim_silences / split_on_silence) -> preview_export -> export. \
+    To find content by what it shows or sounds like (explosions, night scenes, laughter, a crowd, music, speech...): analyze_media (built-in macOS models, local, about 1 s per minute of video, saved and reused) -> find_scenes (include / exclude, apply="add" or "set") -> preview_export -> export. \
     Times are in seconds (or "m:ss.d" / "h:mm:ss"). With direct copy a video piece can only start on a keyframe: the real start snaps to the keyframe before the requested one (preview_export tells which pieces move); \
     use passthrough=false to cut exactly. Pieces are saved per file: if mSLICE is open on the file, the timeline updates live. \
     The agent only creates new files: nothing is ever overwritten, deleted or moved to the trash, and exports stay in the source file's folder (or a sub-folder of it, or the user's chosen export folder).
@@ -81,6 +84,12 @@ enum Agent {
                 properties: [("path", "string", "Absolute path of the file"), ("noise_db", "number", "Silence threshold in dB. Default -40 (use -30 for noisy rooms)."), ("min_duration", "number", "Minimum silence length in seconds. Default 1.")], required: ["path"]),
         ToolDef(name: "get_frame", description: "Return the picture of the video at a given time (PNG), to look at the content before deciding where to cut.",
                 properties: [("path", "string", "Absolute path of the file"), ("time", "string", "Time in seconds or m:ss.d"), ("width", "number", "Width in pixels (default 640, max 1280)")], required: ["path", "time"]),
+        ToolDef(name: "analyze_media", description: "Analyze a video or audio file with the models built into macOS (nothing is downloaded, nothing leaves the Mac): detects the shots (cuts), the kinds of scenes (fire, crowd, night, vehicles, people, animals, food, sports...) and the sounds (speech, music, laughter, gunfire, explosions, sirens...). Takes about 1 s per minute of video; the result is saved and reused. Returns the shot count and the scene and sound families found, each with an identifier (\"scene:fire\", \"sound:laugh\") for find_scenes, its total duration and its number of passages. It does not recognise individual people.",
+                properties: [("path", "string", "Absolute path of the file"), ("force", "boolean", "Analyze again even if a saved result exists (default false)"), ("all", "boolean", "List every family found instead of the 25 longest of each kind (default false)")], required: ["path"]),
+        ToolDef(name: "find_scenes", description: "Find the passages of a file that match scene and sound criteria, and optionally turn them into pieces. `include`: every criterion must hold at the same time (AND). `exclude`: passages that overlap any of these are dropped (they are still listed, marked excluded_by). Criteria: \"scene:<family>\" or \"sound:<family>\" (identifiers from analyze_media, e.g. scene:fire, scene:night, sound:laugh, sound:gunfire, sound:explosion, sound:music), \"label:<name>\" (raw macOS image label, e.g. label:fireworks) or \"sound_label:<name>\" (raw sound label, e.g. sound_label:gunshot_gunfire). Passages are smoothed (gaps under 1.5 s filled, under 1 s dropped) and, with whole_shots=true, widened to whole shots. apply=\"none\" (default) only lists them; \"add\" adds the kept passages to the existing pieces; \"set\" replaces the pieces. Analyzes the file first if needed.",
+                properties: [("path", "string", "Absolute path of the file"), ("include", "array", "Criteria that must all hold, e.g. [\"scene:night\", \"sound:gunfire\"]"), ("exclude", "array", "Criteria that discard a passage, e.g. [\"sound:music\"]"),
+                             ("whole_shots", "boolean", "Widen each passage to the whole shots it touches (default true); false adds a 0.3 s margin instead"), ("apply", "string", "none (default), add or set"),
+                             ("min_scene_score", "number", "Minimum image-label confidence 0.05-0.95 (default 0.35)"), ("min_sound_score", "number", "Minimum sound confidence 0.05-0.95 (default 0.5)"), ("min_length", "number", "Shortest passage kept, in seconds (default 1)")], required: ["path", "include"]),
         ToolDef(name: "get_segments", description: "The pieces (segments) marked to keep in a file, in order, numbered from 1. Read live from mSLICE if the file is open, else from the saved session.",
                 properties: [("path", "string", "Absolute path of the file")], required: ["path"]),
         ToolDef(name: "set_segments", description: "Replace all the pieces of a file. Pieces are clamped to the file, sorted, and overlapping ones are merged. If mSLICE has the file open, the timeline updates live.",
@@ -364,6 +373,14 @@ enum Agent {
             let live = store(segs, i, host: host)
             return segmentsResult(segs, live: live, i, extra: ["removed_seconds": r1(i.duration - segs.reduce(0) { $0 + $1.duration })])
 
+        case "analyze_media":
+            let i = try await info(try fileURL(a))
+            let (index, fresh) = try await analysis(i, force: bool(a["force"]) ?? false, host: host)
+            return analysisSummary(index, i, fresh: fresh, all: bool(a["all"]) ?? false)
+
+        case "find_scenes":
+            return try await findScenes(a, host: host)
+
         case "preview_export", "export":
             return try await exportTool(a, dryRun: name == "preview_export", host: host)
 
@@ -388,6 +405,88 @@ enum Agent {
         default:
             throw AgentError("Unknown tool: \(name)")
         }
+    }
+
+    // MARK: Analyse et recherche
+
+    /// Résultat d'analyse enregistré, sinon analyse du fichier (dans l'appli si le fichier y est ouvert : l'onglet « Trouver » montre la progression).
+    static func analysis(_ i: MediaInfo, force: Bool, host: AgentHost?) async throws -> (AnalysisIndex, Bool) {
+        if !force, let c = AnalysisStore.load(i) { return (c, false) }
+        var idx: AnalysisIndex?
+        if let host, host.segments(of: i.url) != nil { idx = await host.analyze(i.url, force: force) }
+        if idx == nil { idx = await AnalysisRunner.run(i, job: AnalysisJob(), progress: { _ in }) }
+        guard let idx else { throw AgentError("The analysis failed or was cancelled (is the file readable by macOS, with an image or sound track?).") }
+        return (idx, true)
+    }
+
+    private static func englishName(_ t: FindTerm) -> String {
+        switch t.kind {
+        case .scene: return SceneFamilies.byID[t.key]?.names[1] ?? t.key
+        case .sound: return SoundFamilies.byID[t.key]?.names[1] ?? t.key
+        default: return t.key
+        }
+    }
+
+    static func analysisSummary(_ index: AnalysisIndex, _ i: MediaInfo, fresh: Bool, all: Bool) -> ToolOutput {
+        let s = Finder(index).summary()
+        func rows(_ r: [SummaryRow]) -> [[String: Any]] { (all ? r : Array(r.prefix(25))).map { ["id": $0.term.token, "name": englishName($0.term), "seconds": r1($0.seconds), "passages": $0.count] } }
+        var o: [String: Any] = ["file": i.url.path, "duration": r1(i.duration), "analyzed_now": fresh, "analysis_seconds": r1(index.seconds), "has_video": index.hasVideo, "has_audio": index.hasAudio,
+                                "scenes": rows(s.scenes), "sounds": rows(s.sounds),
+                                "hint": "Use find_scenes with include / exclude criteria such as \"scene:fire\" or \"sound:laugh\"; label:<name> and sound_label:<name> reach the raw macOS labels."]
+        if index.hasVideo { o["shots"] = index.shotCount }
+        if !all, s.scenes.count > 25 || s.sounds.count > 25 { o["note"] = "Only the 25 longest of each kind are listed; pass all=true for the rest." }
+        return .json(o)
+    }
+
+    private static func findScenes(_ a: [String: Any], host: AgentHost?) async throws -> ToolOutput {
+        let i = try await info(try fileURL(a))
+        func terms(_ key: String, exclude: Bool) throws -> [FindTerm] {
+            guard let list = a[key] as? [Any] else { return [] }
+            return try list.map { any in
+                guard let s = any as? String, let t = FindTerm.parse(s.trimmingCharacters(in: .whitespaces), exclude: exclude) else { throw AgentError("Bad criterion \"\("\(any)".prefix(60))\": use scene:<family>, sound:<family>, label:<name> or sound_label:<name>.") }
+                if t.kind == .scene, SceneFamilies.byID[t.key] == nil { throw AgentError("Unknown scene family \"\(t.key.prefix(40))\". Known: \(SceneFamilies.all.map(\.id).joined(separator: ", ")).") }
+                if t.kind == .sound, SoundFamilies.byID[t.key] == nil { throw AgentError("Unknown sound family \"\(t.key.prefix(40))\". Known: \(SoundFamilies.all.map(\.id).joined(separator: ", ")).") }
+                return t
+            }
+        }
+        let inc = try terms("include", exclude: false), exc = try terms("exclude", exclude: true)
+        guard !inc.isEmpty, inc.count + exc.count <= 12 else { throw AgentError("include must list 1 to 12 criteria in total with exclude (e.g. [\"scene:fire\"]).") }
+        let apply = (a["apply"] as? String)?.lowercased() ?? "none"
+        guard ["none", "add", "set"].contains(apply) else { throw AgentError("apply must be none, add or set.") }
+        var q = FindQuery(terms: inc + exc)
+        q.wholeShots = bool(a["whole_shots"]) ?? true
+        if let v = number(a["min_scene_score"]) { q.sceneMin = min(max(v, 0.05), 0.95) }
+        if let v = number(a["min_sound_score"]) { q.soundMin = min(max(v, 0.05), 0.95) }
+        if let v = number(a["min_length"]) { q.minLength = min(max(v, 0.5), 30) }
+        let (index, fresh) = try await analysis(i, force: false, host: host)
+        let finder = Finder(index)
+        var notes: [String] = []
+        for t in inc + exc {
+            if (t.kind == .scene || t.kind == .sceneLabel) && !index.hasVideo { throw AgentError("This file has no video: image criteria (\(t.token)) cannot match. Use sound criteria.") }
+            if (t.isSound) && !index.hasAudio { throw AgentError("This file has no audio: sound criteria (\(t.token)) cannot match.") }
+            if !finder.knows(t) { notes.append("\(t.token) never appears in this file.") }
+        }
+        let r = finder.run(q)
+        var o: [String: Any] = ["file": i.url.path, "analyzed_now": fresh, "include": inc.map(\.token), "exclude": exc.map(\.token), "whole_shots": q.wholeShots,
+                                "passages_found": r.passages.count, "passages_kept": r.passages.filter { $0.excludedBy == nil }.count, "kept_seconds": r1(r.keptSeconds)]
+        o["passages"] = r.passages.prefix(200).enumerated().map { n, p -> [String: Any] in
+            var d: [String: Any] = ["index": n + 1, "start": r1(p.start), "end": r1(p.end), "duration": r1(p.duration), "start_text": Fmt.time(p.start), "end_text": Fmt.time(p.end)]
+            if let by = p.excludedBy { d["excluded_by"] = by }
+            return d
+        }
+        if r.passages.count > 200 { o["truncated"] = true }
+        if !notes.isEmpty { o["notes"] = notes }
+        let found = r.segments.map { Segment(start: $0.start, end: $0.end) }
+        if apply == "none" || found.isEmpty {
+            if apply != "none" { o["applied"] = false; o["note"] = "Nothing to apply: no passage matches." }
+            o["pieces_if_applied"] = r.segments.count
+            return .json(o)
+        }
+        let segs = normalize(apply == "add" ? currentSegments(i, host: host).segs + found : found, duration: i.duration)
+        let live = store(segs, i, host: host)
+        host?.notify("Agent : \(found.count) \(found.count > 1 ? "morceaux trouvés" : "morceau trouvé")")
+        o["applied"] = apply; o["live_in_app"] = live; o["count"] = segs.count; o["kept_total_seconds"] = r1(segs.reduce(0) { $0 + $1.duration }); o["segments"] = rows(segs)
+        return .json(o)
     }
 
     // MARK: Export
