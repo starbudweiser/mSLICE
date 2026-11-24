@@ -26,6 +26,13 @@ if let i = CommandLine.arguments.firstIndex(of: "--selftest-batch"), CommandLine
     dispatchMain()
 }
 
+// `mSLICE --selftest-analysis <fichier>` : analyse native (plans, scènes, sons), requêtes, temps, mémoire, annulation, pause.
+if let i = CommandLine.arguments.firstIndex(of: "--selftest-analysis"), CommandLine.arguments.indices.contains(i + 1) {
+    let path = CommandLine.arguments[i + 1]
+    Task { @MainActor in exit(await AnalysisTest.run(path: path)) }
+    dispatchMain()
+}
+
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate

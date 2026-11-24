@@ -3,6 +3,9 @@
 // à jour en direct) ; sinon l'outil s'exécute ici, sans fenêtre. Désactivé tant que l'utilisateur n'a pas coché « Autoriser un agent ».
 import Foundation
 
+// `mslice-mcp --analyze <fichier>` : processus d'analyse lancé par l'appli (voir Analysis/AnalysisRunner.swift)
+if let i = CommandLine.arguments.firstIndex(of: "--analyze"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1]) }
+
 signal(SIGPIPE, SIG_IGN)
 setvbuf(stdout, nil, _IOLBF, 0)
 
