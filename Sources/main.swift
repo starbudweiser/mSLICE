@@ -33,6 +33,13 @@ if let i = CommandLine.arguments.firstIndex(of: "--selftest-analysis"), CommandL
     dispatchMain()
 }
 
+// `mSLICE --selftest-dialogues [<fichier>]` : sous-titres, découpage en répliques, corrections, fichier de répliques ; avec un fichier : transcription réelle.
+if let i = CommandLine.arguments.firstIndex(of: "--selftest-dialogues") {
+    let path = CommandLine.arguments.indices.contains(i + 1) ? CommandLine.arguments[i + 1] : nil
+    Task { @MainActor in exit(await DialoguesTest.run(path: path)) }
+    dispatchMain()
+}
+
 // `mSLICE --install-model <zip>` : installe le modèle des personnages depuis un zip local (essais et captures, sans fenêtre ni réseau) ; l'empreinte du zip doit être celle du catalogue.
 if let i = CommandLine.arguments.firstIndex(of: "--install-model"), CommandLine.arguments.indices.contains(i + 1) {
     let zip = URL(fileURLWithPath: CommandLine.arguments[i + 1])

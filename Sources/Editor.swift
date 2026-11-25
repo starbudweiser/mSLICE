@@ -23,6 +23,8 @@ final class Doc: ObservableObject, Identifiable {
     var onSegmentsChange: (() -> Void)?
     /// Onglet « Trouver » : analyse du fichier, critères, passages (créé à la première demande).
     lazy var find = FindModel(doc: self)
+    /// Onglet « Dialogues » : répliques du fichier (sous-titres ou transcription).
+    lazy var dialogues = DialogueModel(doc: self)
     private var undoStack: [[Segment]] = []
     private var saveWork: DispatchWorkItem?
 
@@ -200,7 +202,7 @@ final class AppModel: ObservableObject {
     }
 
     func close(_ d: Doc) {
-        d.cancel.cancel(); d.find.cancel()
+        d.cancel.cancel(); d.find.cancel(); d.dialogues.cancel()
         docs.removeAll { $0 === d }
         if current === d { current = nil; player.pause(); if let n = docs.first { select(n) } }
     }
@@ -288,7 +290,9 @@ final class AppModel: ObservableObject {
         case 51, 117: d.deleteSelected(); return true
         case 115: player.seek(0); d.ensureVisible(0); return true
         case 119: player.seek(d.duration); d.ensureVisible(d.duration); return true
-        case 49: player.togglePlay(); return true
+        case 49:
+            if UserDefaults.standard.integer(forKey: "rightTab") == 3, d.dialogues.listenSelected(player: player) { return true }       // onglet Dialogues : espace écoute la réplique choisie
+            player.togglePlay(); return true
         default: break
         }
         switch ch {

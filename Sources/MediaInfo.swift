@@ -10,6 +10,8 @@ struct StreamInfo {
     var channels = 0, sampleRate = 0
     var bitrate = 0.0
     var cover = false           // image de pochette attachée (pas une vraie vidéo)
+    var lang = ""              // langue déclarée (code ISO 639-2, ex. « fre »)
+    var title = ""
 }
 
 struct MediaInfo {
@@ -63,6 +65,9 @@ enum Probe {
             if rp.count == 2, rp[1] > 0 { st.fps = rp[0] / rp[1] }
             st.channels = Int(num(s["channels"])); st.sampleRate = Int(num(s["sample_rate"])); st.bitrate = num(s["bit_rate"])
             if let d = s["disposition"] as? [String: Any], num(d["attached_pic"]) == 1 { st.cover = true }
+            if let tags = s["tags"] as? [String: Any] {
+                st.lang = (tags["language"] as? String) ?? ""; st.title = (tags["title"] as? String) ?? ""
+            }
             streams.append(st)
         }
         var duration = num(fmt["duration"])

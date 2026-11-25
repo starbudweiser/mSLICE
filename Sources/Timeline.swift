@@ -8,8 +8,11 @@ final class TimelineView: NSView {
     static let totalH: CGFloat = rulerH + gap + filmH + gap + waveH
     /// Piste fine de résultats (onglet « Trouver ») sous la forme d'onde.
     static let laneH: CGFloat = 14
-    static func height(lane: Bool) -> CGFloat { lane ? totalH + gap + laneH : totalH }
+    static func height(lane: Bool, dialogues: Bool = false) -> CGFloat { totalH + (lane ? gap + laneH : 0) + (dialogues ? gap + laneH : 0) }
     private var hasLane: Bool { !(doc?.find.lane.isEmpty ?? true) }
+    /// Piste « Dialogues » (onglet Dialogues) : sous la piste de résultats s'il y en a une.
+    private var hasDialogueLane: Bool { doc?.dialogues.laneVisible ?? false }
+    private var dialogueLaneY: CGFloat { TimelineView.totalH + TimelineView.gap + (hasLane ? TimelineView.laneH + TimelineView.gap : 0) }
 
     var doc: Doc? { didSet { bind() } }
     var player: PlayerModel? { didSet { bind() } }
@@ -47,6 +50,7 @@ final class TimelineView: NSView {
         doc.peaks.onChange = { [weak self] in self?.needsDisplay = true }
         doc.strip.onChange = { [weak self] in self?.needsDisplay = true }
         doc.find.$lane.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)
+        doc.dialogues.objectWillChange.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)
         needsDisplay = true; setPlayhead(player.time)
     }
 
@@ -191,6 +195,30 @@ final class TimelineView: NSView {
             }
         }
 
+        // Piste « Dialogues » : un trait par réplique (vert), les écartées en gris, la réplique choisie cerclée
+        if let dl = doc?.dialogues, dl.laneVisible {
+            let laneY = dialogueLaneY
+            let laneRect = CGRect(x: 0, y: laneY, width: w, height: TimelineView.laneH)
+            ctx.setFillColor(Theme.textNS.withAlphaComponent(0.05).cgColor)
+            ctx.addPath(CGPath(roundedRect: laneRect, cornerWidth: 4, cornerHeight: 4, transform: nil)); ctx.fillPath()
+            ctx.saveGState(); ctx.addPath(CGPath(roundedRect: laneRect, cornerWidth: 4, cornerHeight: 4, transform: nil)); ctx.clip()
+            for l in dl.lane where l.end >= t0 && l.start <= t1 {
+                let r = CGRect(x: x(l.start), y: laneY + 3, width: max(x(l.end) - x(l.start) - 1, 2), height: TimelineView.laneH - 6)
+                ctx.setFillColor(l.discarded ? text2.withAlphaComponent(0.35).cgColor : Theme.okNS.cgColor)
+                ctx.addPath(CGPath(roundedRect: r, cornerWidth: 2, cornerHeight: 2, transform: nil)); ctx.fillPath()
+                if l.id == dl.selected { ctx.setStrokeColor(Theme.textNS.cgColor); ctx.setLineWidth(1.5); ctx.addPath(CGPath(roundedRect: r.insetBy(dx: -1, dy: -1.5), cornerWidth: 3, cornerHeight: 3, transform: nil)); ctx.strokePath() }
+            }
+            ctx.restoreGState()
+            let label = L.t("dlg.lane").uppercased() as NSString
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9.5, weight: .semibold), .foregroundColor: text2, .kern: 0.3]
+            let sz = label.size(withAttributes: attrs)
+            if sz.width < w * 0.5 {
+                let bgR = CGRect(x: w - sz.width - 12, y: laneY, width: sz.width + 10, height: TimelineView.laneH)
+                ctx.setFillColor(Theme.cardNS.withAlphaComponent(0.85).cgColor); ctx.fill(bgR)
+                label.draw(at: NSPoint(x: bgR.minX + 5, y: laneY + (TimelineView.laneH - sz.height) / 2), withAttributes: attrs)
+            }
+        }
+
         // Zones retirées : voile + hachures
         let bodyTop = filmY, bodyH = TimelineView.filmH + TimelineView.gap + TimelineView.waveH
         var edges: [Double] = [0] + d.segments.flatMap { [$0.start, $0.end] } + [d.duration]
@@ -281,6 +309,12 @@ final class TimelineView: NSView {
         let laneY = TimelineView.totalH + TimelineView.gap
         if hasLane, pt.y >= laneY - 2, let hit = d.find.lane.first(where: { t >= $0.start - 3 * d.viewSpan / Double(max(bounds.width, 1)) && t <= $0.end + 3 * d.viewSpan / Double(max(bounds.width, 1)) }) {
             p.pause(); p.seek(hit.start); scrubbing = false; return           // un clic sur un passage amène la tête de lecture à son début
+        }
+        if hasDialogueLane, pt.y >= dialogueLaneY - 2 {
+            let tol = 5 * d.viewSpan / Double(max(bounds.width, 1))
+            if let hit = d.dialogues.lane.first(where: { t >= $0.start - tol && t <= $0.end + tol }) {
+                p.pause(); p.seek(hit.start); d.dialogues.select(hit.id, seek: false); scrubbing = false; return       // un clic sur une réplique amène la tête de lecture à son début
+            }
         }
         if pt.y > TimelineView.rulerH, let s = d.segment(at: t) { d.selected = s.id }
         scrubbing = true; p.pause(); p.seek(t, precise: false)

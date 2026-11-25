@@ -21,7 +21,7 @@ rm -rf "${APP:?}" build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers" "$APP/Contents/PlugIns/FinderExt.appex/Contents/MacOS" build
 ARCHS=(arm64); [ -n "${UNIVERSAL:-}" ] && ARCHS=(arm64 x86_64)
 # noyau sans interface partagé avec le serveur MCP (mslice-mcp)
-CORE=(Sources/Tools.swift Sources/MediaInfo.swift Sources/Model.swift Sources/Exporter.swift Sources/L10n.swift Sources/L10nAgent.swift Sources/SessionStore.swift Sources/Silence.swift Sources/AgentCore.swift Sources/AgentBridge.swift Sources/Proxies.swift Sources/L10nFind.swift Sources/Analysis/*.swift)
+CORE=(Sources/Tools.swift Sources/MediaInfo.swift Sources/Model.swift Sources/Exporter.swift Sources/L10n.swift Sources/L10nAgent.swift Sources/SessionStore.swift Sources/Silence.swift Sources/AgentCore.swift Sources/AgentBridge.swift Sources/Proxies.swift Sources/L10nFind.swift Sources/L10nDialogues.swift Sources/Analysis/*.swift)
 for arch in $ARCHS; do
   swiftc $OPT -swift-version 5 -target $arch-apple-macos14.0 -o build/mSLICE-$arch Sources/*.swift Sources/Analysis/*.swift
   swiftc $OPT -swift-version 5 -target $arch-apple-macos14.0 -parse-as-library -application-extension -module-name FinderExt -framework FinderSync \

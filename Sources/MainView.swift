@@ -263,8 +263,9 @@ struct TimelineCard: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
     @ObservedObject private var find: FindModel      // la piste de résultats ajoute sa hauteur à la timeline
+    @ObservedObject private var dialogues: DialogueModel      // la piste « Dialogues » aussi
     let player: PlayerModel          // pas observé : la tête de lecture est un calque qui se met à jour seul
-    init(model: AppModel, doc: Doc, player: PlayerModel) { self.model = model; self.doc = doc; self.player = player; self.find = doc.find }
+    init(model: AppModel, doc: Doc, player: PlayerModel) { self.model = model; self.doc = doc; self.player = player; self.find = doc.find; self.dialogues = doc.dialogues }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -273,10 +274,11 @@ struct TimelineCard: View {
                 Text(String(format: "%.0f×", max(doc.duration / max(doc.viewSpan, 0.1), 1))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).frame(minWidth: 26, alignment: .leading)
                 Button { model.snap.toggle() } label: { Chip(text: L.t("tl.snap"), on: model.snap && model.opts.passthrough, enabled: model.opts.passthrough && doc.hasVideo) }.buttonStyle(.plain)
                     .help(L.t("tl.snap.help"))
+                if dialogues.hasLines { Button { dialogues.showLane.toggle() } label: { Chip(text: L.t("dlg.lane.chip"), on: dialogues.showLane) }.buttonStyle(.plain) }
                 Button { Task { await autoTrim() } } label: { Chip(text: L.t("tl.auto"), enabled: doc.info.audio != nil) }.buttonStyle(.plain)
                 Spacer(minLength: 0)
             }.frame(height: 26).padding(.bottom, 4)
-            TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.height(lane: !find.lane.isEmpty))
+            TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.height(lane: !find.lane.isEmpty, dialogues: dialogues.laneVisible))
             HStack(spacing: 10) {
                 legend("I", L.t("key.in")); legend("O", L.t("key.out")); legend("Espace", L.t("key.play")); legend("J K L", L.t("key.speed"))
                 legend("← →", L.t("key.frame")); legend("↑ ↓", L.t("key.keyframe")); legend("⌫", L.t("key.delete"))
@@ -312,11 +314,13 @@ struct TimelineCard: View {
 struct RightPanel: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
-    @AppStorage("rightTab") private var tab = 0          // 0 : morceaux et export, 1 : discussion avec l'agent, 2 : Trouver
+    @AppStorage("rightTab") private var tab = 0          // 0 : morceaux et export, 1 : discussion avec l'agent, 2 : Trouver, 3 : Dialogues
     var body: some View {
         VStack(spacing: 10) {
-            Segmented(options: [(0, L.t("agent.tab.edit")), (2, L.t("find.title")), (1, L.t("agent.title"))], selection: $tab)
-            if tab == 1 {
+            Segmented(options: [(0, L.t("agent.tab.edit")), (2, L.t("find.title")), (3, L.t("dlg.title")), (1, L.t("agent.title"))], selection: $tab)
+            if tab == 3 {
+                DialoguePanel(model: model, doc: doc, dialogues: doc.dialogues)
+            } else if tab == 1 {
                 AgentPanel(model: model, chat: AgentChat.shared)
             } else if tab == 2 {
                 FindPanel(model: model, doc: doc, find: doc.find, openEdit: { tab = 0 })

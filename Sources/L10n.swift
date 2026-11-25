@@ -21,7 +21,7 @@ enum L {
     static func problems() -> [String] { table.filter { $0.value.count != 4 || $0.value.contains(where: { $0.isEmpty }) }.map(\.key).sorted() }
 
     // [fr, en, es, it]
-    static let table: [String: [String]] = [part0, part1, part2, part3, partAgent, partFind, partFamilies].reduce(into: [:]) { $0.merge($1) { a, _ in a } }
+    static let table: [String: [String]] = [part0, part1, part2, part3, partAgent, partFind, partDialogues, partFamilies].reduce(into: [:]) { $0.merge($1) { a, _ in a } }
     private static let part0: [String: [String]] = [
         "unit.gb": ["Go", "GB", "GB", "GB"],
         "unit.mb": ["Mo", "MB", "MB", "MB"],

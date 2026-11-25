@@ -43,6 +43,18 @@ enum AnalysisRunner {
         return VoiceStore.load(info)
     }
 
+    /// Transcription de la parole (macOS 26) dans `mslice-mcp --dialogues` ; le résultat passe par un fichier temporaire. nil si annulée ou impossible.
+    static func runDialogues(_ info: MediaInfo, language: String, job: AnalysisJob, progress: @escaping @Sendable (AnalysisProgress) -> Void) async -> [DialogueLine]? {
+        let raw = DialogueStore.rawURL(info)
+        defer { try? FileManager.default.removeItem(at: raw) }
+        guard let helper = helper() else {
+            return await Transcriber.run(info, language: language, job: job) { f in var p = AnalysisProgress(hasVideo: true, hasAudio: false); p.images = f; p.imagesTime = f * info.duration; progress(p) }
+        }
+        guard await spawn(helper, ["--dialogues", info.url.path, language, raw.path], base: AnalysisProgress(hasVideo: true, hasAudio: false), job: job, progress: progress),
+              let d = try? Data(contentsOf: raw), let lines = try? JSONDecoder().decode([DialogueLine].self, from: d) else { return nil }
+        return lines
+    }
+
     /// Lance le processus d'analyse, relaie sa progression, transmet l'annulation et la pause ; vrai s'il a terminé normalement.
     private static func spawn(_ helper: URL, _ arguments: [String], base: AnalysisProgress, job: AnalysisJob, progress: @escaping @Sendable (AnalysisProgress) -> Void) async -> Bool {
         await AnalysisSlot.shared.acquire()
