@@ -7,6 +7,10 @@
 //   - les images suivantes arrivent au rythme du décodage (centaines d'images par seconde) ;
 //   - se déplacer dans un groupe déjà décodé, en avant comme en arrière, est instantané et exact à l'image près.
 // Les images sont affichées par une couche posée au-dessus du lecteur, retirée dès que AVPlayer a rejoint la position exacte.
+//
+// Groupes très longs (fichiers sans images clés régulières, parfois une seule au début) : garder tout le groupe coûterait des
+// gigaoctets. On ne garde alors qu'une fenêtre d'images autour de la cible, plus des repères espacés (≤ ¼ de la réserve) qui
+// donnent tout de suite une image proche quand on revient en arrière, le temps de redécoder depuis l'image clé.
 import AVFoundation
 import AppKit
 import CoreMedia
@@ -20,16 +24,23 @@ final class Scrubber: @unchecked Sendable {
 
     // MARK: Types
 
-    private struct Frame { let pts: Double; let buffer: CVPixelBuffer }
+    private struct Frame { let pts: Double; let buffer: CVPixelBuffer; let anchor: Bool }
 
     private final class GOP {
         let start: Double, end: Double           // [image clé, image clé suivante)
-        var frames: [Frame] = []                  // ordre d'affichage
-        var complete = false
+        var frames: [Frame] = []                  // ordre d'affichage : fenêtre continue + repères
         var lastUse: UInt64 = 0
         var bytes = 0
+        /// Écart entre repères (groupes longs) ; 0 : groupe court, toutes les images sont gardées.
+        var spacing = 0.0
+        // Passe de décodage en cours (depuis l'image clé) : images continues de `denseFrom` à `through`.
+        var denseFrom = Double.infinity
+        var through = -1.0
+        var complete = false                      // la passe a atteint la fin du groupe
+        var decoded = 0                           // images décodées pendant la passe
+        var lastSlot = -1
         init(start: Double, end: Double) { self.start = start; self.end = end }
-        var through: Double { frames.last?.pts ?? -1 }
+        func newPass() { denseFrom = .infinity; through = -1; complete = false; decoded = 0; lastSlot = -1 }
     }
 
     private struct Active { let gop: GOP; let reader: AVAssetReader; let output: AVAssetReaderTrackOutput }
@@ -210,13 +221,13 @@ final class Scrubber: @unchecked Sendable {
     private func syncRange(_ track: AVAssetTrack, _ t: Double) -> (Double, Double)? {
         guard let c = track.makeSampleCursor(presentationTimeStamp: CMTime(seconds: t + offset, preferredTimescale: 6000)) else { return nil }
         var n = 0
-        while !c.currentSampleSyncInfo.sampleIsFullSync.boolValue, n < 20_000 { if c.stepInDecodeOrder(byCount: -1) == 0 { break }; n += 1 }
+        while !c.currentSampleSyncInfo.sampleIsFullSync.boolValue, n < 200_000 { if c.stepInDecodeOrder(byCount: -1) == 0 { break }; n += 1 }
         let ks = c.presentationTimeStamp.seconds - offset
         guard ks.isFinite else { return nil }
         var ke = cur.duration
         if let nx = c.copy() as? AVSampleCursor, nx.stepInDecodeOrder(byCount: 1) != 0 {
             var m = 0
-            while m < 20_000 {
+            while m < 200_000 {
                 if nx.currentSampleSyncInfo.sampleIsFullSync.boolValue { ke = nx.presentationTimeStamp.seconds - offset; break }
                 if nx.stepInDecodeOrder(byCount: 1) == 0 { break }
                 m += 1
@@ -225,19 +236,65 @@ final class Scrubber: @unchecked Sendable {
         return (min(ks, t), max(ke, ks + cur.frameDur))
     }
 
+    /// Groupe plus long que ceci : fenêtre autour de la cible et repères espacés, au lieu de tout garder.
+    private static let longGOP = 10.0
+    /// Fenêtre gardée avant la cible quand la réserve est pleine (revenir un peu en arrière reste instantané).
+    private static let keepBack = 1.0
+
     private func cachedGOP(containing t: Double) -> GOP? {
         for g in gops.values where g.start <= t + 1e-4 && t < g.end - 1e-4 && !g.frames.isEmpty { return g }
         return nil
     }
 
-    /// Le groupe a-t-il toutes les images jusqu'à `t` incluse (une image au-delà est décodée, ou le groupe est fini) ?
-    private func covers(_ g: GOP, _ t: Double) -> Bool { g.complete || g.through > t + 1e-3 }
+    /// La passe en cours a-t-elle toutes les images jusqu'à `t` incluse (une image au-delà est décodée, ou le groupe est fini) ?
+    private func covers(_ g: GOP, _ t: Double) -> Bool { t >= g.denseFrom - 1e-3 && (g.complete || g.through > t + 1e-3) }
 
+    /// La passe en cours peut-elle encore fournir l'image exacte de `t` (sans repartir de l'image clé) ?
+    private func reachable(_ g: GOP, _ t: Double) -> Bool {
+        guard active?.gop === g, !g.complete else { return false }
+        return g.denseFrom.isFinite ? t >= g.denseFrom - 1e-3 : t > g.through + 1e-3
+    }
+
+    /// Dernière image gardée à `t` ou avant : exacte dans la fenêtre continue, approchée ailleurs (repère).
     private func frame(in g: GOP, at t: Double) -> Frame? {
         guard !g.frames.isEmpty else { return nil }
         var lo = 0, hi = g.frames.count - 1
         while lo < hi { let mid = (lo + hi + 1) / 2; if g.frames[mid].pts <= t + 1e-3 { lo = mid } else { hi = mid - 1 } }
         return g.frames[lo]
+    }
+
+    /// Nouvelle passe depuis l'image clé. Les images d'une passe précédente ne sont plus continues : seuls les repères restent.
+    private func startPass(_ gop: GOP, _ asset: AVURLAsset, _ track: AVAssetTrack) -> Bool {
+        if let a = active { a.reader.cancelReading(); active = nil }             // l'ancien groupe reste en cache, partiel
+        let before = gop.bytes
+        gop.frames.removeAll { !$0.anchor }
+        gop.bytes = gop.frames.reduce(0) { $0 + CVPixelBufferGetDataSize($1.buffer) }
+        bytes -= before - gop.bytes
+        gop.newPass()
+        guard let r = makeReader(asset, track, start: gop.start + offset - 0.002, end: gop.end + offset - 0.002, size: (cur.width, cur.height)) else { return false }
+        active = Active(gop: gop, reader: r.reader, output: r.output)
+        return true
+    }
+
+    /// Range une image décodée : toujours dans un groupe court ; dans un groupe long, seulement près de la cible ou comme repère.
+    private func ingest(_ pb: CVPixelBuffer, pts: Double, into gop: GOP, target t: Double) {
+        let firstOfPass = gop.decoded == 0
+        gop.decoded += 1; gop.through = max(gop.through, pts)
+        var anchor = false
+        if gop.spacing > 0 {
+            let slot = Int((pts - gop.start) / gop.spacing)
+            if slot != gop.lastSlot { gop.lastSlot = slot; anchor = true }
+        }
+        let dense = gop.spacing == 0 || gop.denseFrom.isFinite || pts >= t - Self.keepBack
+        guard dense || anchor else { return }
+        if dense && !gop.denseFrom.isFinite { gop.denseFrom = firstOfPass ? gop.start : pts }
+        let f = Frame(pts: pts, buffer: pb, anchor: anchor)
+        var lo = 0, hi = gop.frames.count
+        while lo < hi { let mid = (lo + hi) / 2; if gop.frames[mid].pts < pts { lo = mid + 1 } else { hi = mid } }
+        if lo < gop.frames.count, abs(gop.frames[lo].pts - pts) < 1e-4 { return }   // repère déjà gardé par une passe précédente
+        gop.frames.insert(f, at: lo)
+        let size = CVPixelBufferGetDataSize(pb); gop.bytes += size; bytes += size
+        evict(keeping: gop, target: t)
     }
 
     /// Traite la cible courante ; renvoie la génération de demande atteinte.
@@ -255,45 +312,43 @@ final class Scrubber: @unchecked Sendable {
             else {
                 // Images toutes clés (ProRes, MJPEG…) : on décode par paquets d'au moins une seconde.
                 gop = GOP(start: ks, end: max(ke, ks + 1.0)); gops[key] = gop
+                if gop.end - gop.start > Self.longGOP {
+                    let frameBytes = Double(cur.width * cur.height) * 1.6
+                    let anchors = max(8, Double(byteCap) / 4 / frameBytes)
+                    gop.spacing = max(0.5, (gop.end - gop.start) / anchors)
+                }
             }
         }
         useTick += 1; gop.lastUse = useTick
 
         if !covers(gop, t) {
-            if active?.gop !== gop {
-                if let a = active { a.reader.cancelReading(); active = nil }      // l'ancien groupe reste en cache, partiel
-                bytes -= gop.bytes; gop.bytes = 0; gop.frames = []; gop.complete = false
-                guard let r = makeReader(asset, track, start: gop.start + offset - 0.002, end: gop.end + offset - 0.002, size: (cur.width, cur.height)) else { return g }
-                active = Active(gop: gop, reader: r.reader, output: r.output)
-            }
+            // Tout de suite, l'image gardée la plus proche avant la cible (repère, image clé ou fenêtre).
+            var shown = -Double.infinity
+            if let f = frame(in: gop, at: t), f.pts <= t + 1e-3 { present(f.buffer); shown = f.pts }
+            if !reachable(gop, t) { guard startPass(gop, asset, track) else { return g } }
             guard let a = active else { return g }
-            var lastShown = Date.distantPast
-            var first = gop.frames.isEmpty
+            var lastShown = shown.isFinite ? Date() : Date.distantPast
             while true {
                 lock.lock(); let ng = generation; let nt = target; lock.unlock()
                 if ng != g {
                     let ntc = min(max(nt, 0), cur.duration)
                     if ntc < gop.start - 1e-4 || ntc >= gop.end { return g }        // autre groupe : on recommence au tour suivant
+                    if !covers(gop, ntc) && !reachable(gop, ntc) { return g }     // revenu derrière la passe : nouvelle passe au tour suivant
                     g = ng; t = ntc
                 }
                 if covers(gop, t) { break }
                 guard let sb = a.output.copyNextSampleBuffer() else { gop.complete = true; active = nil; break }
                 guard let pb = CMSampleBufferGetImageBuffer(sb) else { continue }
                 let pts = CMSampleBufferGetPresentationTimeStamp(sb).seconds - offset
-                if first {
-                    first = false
-                    if abs(pts - gop.start) > cur.frameDur * 1.5 { lock.lock(); mismatchCount += 1; lock.unlock() }
-                    present(pb)                                                    // retour immédiat : l'image clé
-                    lastShown = Date()
-                } else if pts <= t + 1e-3, Date().timeIntervalSince(lastShown) > 0.03 {
-                    present(pb); lastShown = Date()                                // on rattrape la cible en montrant le chemin
+                if gop.decoded == 0, abs(pts - gop.start) > cur.frameDur * 1.5 { lock.lock(); mismatchCount += 1; lock.unlock() }
+                // On montre le chemin vers la cible, sans jamais revenir avant l'image déjà affichée.
+                if pts > shown + 1e-4, pts <= t + 1e-3, !shown.isFinite || Date().timeIntervalSince(lastShown) > 0.03 {
+                    present(pb); shown = pts; lastShown = Date()
                 }
-                let size = CVPixelBufferGetDataSize(pb)
-                gop.frames.append(Frame(pts: pts, buffer: pb)); gop.bytes += size; bytes += size
-                evict(keeping: gop)
+                ingest(pb, pts: pts, into: gop, target: t)
             }
         }
-        if let f = frame(in: gop, at: t) {
+        if covers(gop, t), let f = frame(in: gop, at: t) {
             present(f.buffer)
             lock.lock(); lastExactRecord = (t, f.pts); lock.unlock()
         }
@@ -305,20 +360,30 @@ final class Scrubber: @unchecked Sendable {
                 if ng != g { break }
                 guard let sb = a.output.copyNextSampleBuffer() else { gop.complete = true; active = nil; break }
                 guard let pb = CMSampleBufferGetImageBuffer(sb) else { continue }
-                let size = CVPixelBufferGetDataSize(pb)
-                gop.frames.append(Frame(pts: CMSampleBufferGetPresentationTimeStamp(sb).seconds - offset, buffer: pb)); gop.bytes += size; bytes += size
-                evict(keeping: gop)
+                ingest(pb, pts: CMSampleBufferGetPresentationTimeStamp(sb).seconds - offset, into: gop, target: t)
             }
         }
         return g
     }
 
-    private func evict(keeping keep: GOP) {
+    private func evict(keeping keep: GOP, target t: Double) {
         guard bytes > byteCap else { return }
         for (k, g) in gops.sorted(by: { $0.value.lastUse < $1.value.lastUse }) where g !== keep && g !== active?.gop {
             bytes -= g.bytes; gops[k] = nil
-            if bytes <= byteCap * 3 / 4 { break }
+            if bytes <= byteCap * 3 / 4 { return }
         }
+        // Toujours trop : le groupe en cours est trop long pour la réserve. On retire le début de sa fenêtre ; les repères restent.
+        let cut = t - Self.keepBack
+        guard bytes > byteCap, keep.denseFrom.isFinite, cut > keep.denseFrom else { return }
+        var freed = 0
+        keep.frames.removeAll { f in
+            let drop = !f.anchor && f.pts >= keep.denseFrom - 1e-4 && f.pts < cut
+            if drop { freed += CVPixelBufferGetDataSize(f.buffer) }
+            return drop
+        }
+        keep.bytes -= freed; bytes -= freed
+        if cut > keep.through { keep.denseFrom = .infinity }      // la cible est loin devant : la fenêtre reprendra près d'elle
+        else { keep.denseFrom = keep.frames.first(where: { $0.pts >= cut - 1e-4 })?.pts ?? cut }
     }
 
     private func present(_ pb: CVPixelBuffer) {

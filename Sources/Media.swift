@@ -69,6 +69,7 @@ enum PeakLoader {
 
 /// Vignettes réparties à intervalles réguliers sur la durée.
 /// Fichier à images clés espacées (caméra, H.264 / HEVC) : un seul ffmpeg qui ne décode que les images clés (quelques secondes pour 30 min).
+/// Moins d'images clés que de vignettes (parfois une seule, au début) : le même ffmpeg décode toutes les images (≈ 4 s pour 3 min en 1440p60).
 /// Fichier tout en images clés (ProRes…) : recherches rapides en parallèle. Le résultat est gardé sur disque : la réouverture est instantanée.
 final class Filmstrip {
     static let w = 96, h = 54
@@ -108,7 +109,7 @@ final class Filmstrip {
             notify(); return
         }
         let dense = Double(keyframes.count) / max(info.duration, 1) > 1.5          // plus d'une image clé et demie par seconde
-        if dense { await seekPass(info, cancel) } else { await singlePass(info, cancel) }
+        if dense { await seekPass(info, cancel) } else { await singlePass(info, keyOnly: keyframes.count >= count, cancel) }
         if complete, !cancel.cancelled {
             var all = Data()
             for i in 0 ..< count { if let img = image(i), let d = img.dataProvider?.data { all.append(d as Data) } }
@@ -116,14 +117,14 @@ final class Filmstrip {
         }
     }
 
-    /// Un seul ffmpeg : seules les images clés sont décodées, puis ramenées à `count` images régulièrement espacées.
-    private func singlePass(_ info: MediaInfo, _ cancel: CancelToken) async {
+    /// Un seul ffmpeg, ramené à `count` images régulièrement espacées : seules les images clés sont décodées (`keyOnly`), ou toutes.
+    private func singlePass(_ info: MediaInfo, keyOnly: Bool, _ cancel: CancelToken) async {
         guard let ffmpeg = Tools.ffmpeg, let v = info.video else { return }
         let n = count, dur = info.duration
         await Task.detached(priority: .utility) { [self] in
             let vf = "fps=fps=\(String(format: "%.8f", Double(n) / dur)),scale=\(Filmstrip.w):\(Filmstrip.h):force_original_aspect_ratio=decrease,pad=\(Filmstrip.w):\(Filmstrip.h):(ow-iw)/2:(oh-ih)/2:black"
-            let p = Process(); p.executableURL = ffmpeg
-            p.arguments = ["-nostdin", "-v", "error", "-skip_frame", "nokey", "-i", info.url.path, "-map", "0:\(v.index)", "-an", "-sn", "-vf", vf, "-frames:v", String(n), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+            let p = Process(); p.executableURL = ffmpeg; p.qualityOfService = .utility
+            p.arguments = ["-nostdin", "-v", "error"] + (keyOnly ? ["-skip_frame", "nokey"] : []) + ["-i", info.url.path, "-map", "0:\(v.index)", "-an", "-sn", "-vf", vf, "-frames:v", String(n), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
             let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
             do { try p.run() } catch { return }
             cancel.attach(p)
