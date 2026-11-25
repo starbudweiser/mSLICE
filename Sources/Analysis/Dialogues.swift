@@ -11,6 +11,8 @@ struct DialogueLine: Codable, Identifiable, Equatable, Sendable {
     var who: String?                       // nom donné par les sous-titres (SDH, acteur ASS, balise <v> WebVTT)
     var discarded = false
     var corrected = false
+    var speaker: String?                   // protagoniste attribué (« p3 » : personnage, « v2 » : voix seule), voir Speakers.swift
+    var manual: Bool?                      // personnage choisi par l'utilisateur : l'attribution automatique n'y touche plus
     var duration: Double { max(end - start, 0) }
 }
 
@@ -40,6 +42,15 @@ struct DialogueSet: Codable, Equatable, Sendable {
 
     mutating func setDiscarded(_ id: UUID, _ value: Bool) {
         if let i = lines.firstIndex(where: { $0.id == id }) { lines[i].discarded = value }
+    }
+
+    /// Personnage choisi à la main : un protagoniste (`speaker`), un nom libre (`name`) ou aucun (les deux nil).
+    mutating func setSpeaker(_ id: UUID, speaker: String?, name: String?) {
+        guard let i = lines.firstIndex(where: { $0.id == id }) else { return }
+        let n = name.map { DialogueText.sanitize($0) }.flatMap { String($0.prefix(40)) }.flatMap { $0.isEmpty ? nil : $0 }
+        lines[i].speaker = n == nil ? speaker : nil
+        lines[i].who = n
+        lines[i].manual = true
     }
 
     /// Coupe une réplique en deux à la position `offset` (caractères) du texte ; le temps est réparti proportionnellement. Rend l'identifiant de la seconde moitié.

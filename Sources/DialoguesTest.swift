@@ -122,6 +122,27 @@ enum DialoguesTest {
         set.setDiscarded(set.lines[2].id, true)
         check(set.active.count == 2 && set.lines.count == 3, "écartée : garde la réplique, hors de la liste active")
 
+        // 6 bis. qui parle : voix d'abord, puis seul visage, noms des sous-titres et choix manuels intouchés
+        let dustin = SpeakerCandidate(id: "p0", voice: [(0, 10), (30, 40)], face: [(0, 12), (28, 42)])
+        let steve = SpeakerCandidate(id: "p1", voice: [(10, 20)], face: [(9, 22)])
+        let nancy = SpeakerCandidate(id: "v2", voice: [(20, 30)], face: [])
+        let cast = [dustin, steve, nancy]
+        check(Speakers.assign(start: 1, end: 4, candidates: cast) == "p0" && Speakers.assign(start: 11, end: 15, candidates: cast) == "p1" && Speakers.assign(start: 21, end: 25, candidates: cast) == "v2", "qui parle : la voix qui parle pendant la réplique (visage + voix liés, voix sans visage)")
+        check(Speakers.assign(start: 9, end: 11, candidates: cast) == nil, "qui parle : deux voix à parts égales → pas de choix (« Qui ? »)")
+        check(Speakers.assign(start: 45, end: 48, candidates: cast) == nil, "qui parle : personne ne parle ni n'est à l'écran → nil")
+        let silentFace = [SpeakerCandidate(id: "p0", voice: [(0, 5)], face: [(0, 20)]), SpeakerCandidate(id: "p1", voice: [], face: [(10, 20)])]
+        check(Speakers.assign(start: 12, end: 16, candidates: silentFace) == "p1", "qui parle : sans voix reconnue, le seul visage sans voix connue à l'écran")
+        let facesOnly = [SpeakerCandidate(id: "p0", face: [(0, 10)]), SpeakerCandidate(id: "p1", face: [(10, 20)])]
+        check(Speakers.assign(start: 1, end: 4, candidates: facesOnly) == "p0" && Speakers.assign(start: 8, end: 12, candidates: facesOnly) == nil, "qui parle : sans voix du tout, le seul visage à l'écran (deux visages → nil)")
+        var sp = DialogueSet(duration: 60, kind: .subtitles, detail: "", language: "")
+        sp.lines = [DialogueLine(start: 1, end: 4, text: "a"), DialogueLine(start: 11, end: 15, text: "b", who: "Hopper"), DialogueLine(start: 21, end: 25, text: "c"), DialogueLine(start: 1, end: 4, text: "d")]
+        sp.setSpeaker(sp.lines[3].id, speaker: nil, name: "  Will ")
+        let n = Speakers.apply(&sp, candidates: cast)
+        check(n == 2 && sp.lines[0].speaker == "p0" && sp.lines[1].speaker == nil && sp.lines[1].who == "Hopper" && sp.lines[2].speaker == "v2" && sp.lines[3].who == "Will" && sp.lines[3].speaker == nil, "attribution : sous-titres et choix manuel intouchés, 2 répliques attribuées")
+        sp.setSpeaker(sp.lines[0].id, speaker: "p1", name: nil)
+        Speakers.apply(&sp, candidates: cast)
+        check(sp.lines[0].speaker == "p1" && sp.lines[0].manual == true, "attribution : un choix manuel survit à une nouvelle attribution")
+
         // 7. fichier de répliques : aller-retour, refus d'un autre fichier ou d'une autre version
         let src = tmp.appendingPathComponent("Film.mkv")
         let info = MediaInfo(url: src, duration: 60, size: 0, bitrate: 0, format: "", streams: [])

@@ -27,6 +27,8 @@ final class DialogueModel: ObservableObject {
     @Published var selected: UUID?
     @Published var editing: UUID?
     @Published var showLane = true
+    @Published var filter: String?                         // nom du personnage dont on ne montre que les répliques
+    private var findSink: AnyCancellable?
     private var job: AnalysisJob?
     private var listenToken = UUID()
     private var saveWork: DispatchWorkItem?
@@ -38,7 +40,43 @@ final class DialogueModel: ObservableObject {
         if let s = DialogueStore.load(doc.info), !s.lines.isEmpty { data = s; phase = .list }
         choice = sources.first.map { .subtitles($0.id) } ?? .transcribe
         Task { [weak self] in await self?.refreshAssets() }
+        findSink = doc.find.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.objectWillChange.send() } }      // un protagoniste renommé change les noms affichés
     }
+
+    // MARK: Personnages
+
+    var protagonists: [Protagonist] { doc.find.protagonists }
+
+    /// Nom affiché d'une réplique : celui des sous-titres, sinon celui du protagoniste attribué ; nil si personne.
+    func displayName(_ l: DialogueLine) -> String? {
+        if let w = l.who { return w }
+        if let sp = l.speaker { return doc.find.protagonist(sp)?.title }
+        return nil
+    }
+
+    /// Un nom qui n'est ni un nom de protagoniste ni un nom libre : « Personnage 3 » (sans nom donné).
+    func isNamed(_ l: DialogueLine) -> Bool {
+        if l.who != nil { return true }
+        if let sp = l.speaker { return doc.find.protagonist(sp)?.name != nil }
+        return false
+    }
+
+    /// Les personnages qui parlent, du plus bavard au moins bavard, avec leur nombre de répliques.
+    var speakerNames: [(name: String, count: Int)] {
+        var c: [String: Int] = [:]
+        for l in data?.lines ?? [] where !l.discarded { if let n = displayName(l) { c[n, default: 0] += 1 } }
+        return c.map { (name: $0.key, count: $0.value) }.sorted { ($0.count, $1.name) > ($1.count, $0.name) }
+    }
+    var unknownCount: Int { data?.lines.filter { !$0.discarded && displayName($0) == nil }.count ?? 0 }
+    var hasProtagonists: Bool { !protagonists.isEmpty }
+
+    /// Attribue les répliques d'après les protagonistes reconnus (visages + voix) ; les noms des sous-titres et les choix manuels ne bougent pas.
+    func attribute() {
+        mutate { Speakers.apply(&$0, candidates: doc.find.speakerCandidates()) }
+    }
+
+    func setSpeaker(_ id: UUID, protagonist: String?) { mutate { $0.setSpeaker(id, speaker: protagonist, name: nil) } }
+    func setName(_ id: UUID, _ name: String) { mutate { $0.setSpeaker(id, speaker: nil, name: name) } }
 
     // MARK: Piste et liste
 
@@ -54,8 +92,8 @@ final class DialogueModel: ObservableObject {
         guard let lines = data?.lines else { return [] }
         let q = query.trimmingCharacters(in: .whitespaces)
         return lines.filter { l in
-            (showDiscarded || !l.discarded) && (q.isEmpty || l.text.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-                                                   || (l.who?.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil))
+            (showDiscarded || !l.discarded) && (filter == nil || displayName(l) == filter) && (q.isEmpty || l.text.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                                                   || (displayName(l)?.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil))
         }
     }
 
@@ -145,7 +183,8 @@ final class DialogueModel: ObservableObject {
         var s = DialogueSet(duration: doc.duration, kind: kind, detail: detail, language: language)
         s.lines = lines.filter { $0.end > $0.start && $0.start < doc.duration + 1 }.map { var l = $0; l.end = min(l.end, doc.duration); return l }.filter { $0.end > $0.start }
         guard !s.lines.isEmpty else { fail("dlg.fail.empty"); return }
-        data = s; selected = nil; editing = nil; query = ""; phase = .list
+        Speakers.apply(&s, candidates: doc.find.speakerCandidates())
+        data = s; selected = nil; editing = nil; query = ""; filter = nil; phase = .list
         DialogueStore.save(s, for: doc.info)
     }
 

@@ -351,6 +351,13 @@ final class FindModel: ObservableObject {
         merge(drop, into: keep)
     }
 
+    /// Les protagonistes comme plages de temps (visage à l'écran, voix qui parle), pour attribuer les répliques (`Speakers`).
+    func speakerCandidates() -> [SpeakerCandidate] {
+        protagonists.map { p in
+            SpeakerCandidate(id: p.id, voice: p.voice.flatMap { voices?.intervals(of: $0) } ?? [], face: p.person.flatMap { faces?.intervals(of: $0) } ?? [])
+        }
+    }
+
     func protagonist(_ id: String) -> Protagonist? { protagonists.first { $0.id == id } }
 
     /// Le critère qui donne les moments d'un protagoniste selon le mode ; nil si ce mode ne s'applique pas à lui (voix sans visage : « parle » seulement).

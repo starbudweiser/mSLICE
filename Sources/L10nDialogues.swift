@@ -58,6 +58,18 @@ extension L {
         "dlg.edit.hint": ["Placez le curseur à l'endroit de la coupe, puis « Couper en deux ici ».", "Put the cursor where to cut, then “Split in two here”.", "Coloca el cursor donde cortar y pulsa «Dividir en dos aquí».", "Posiziona il cursore dove tagliare, poi «Dividi in due qui»."],
         "dlg.tag.corrected": ["corrigée", "edited", "corregida", "corretta"],
         "dlg.tag.discarded": ["écartée", "discarded", "descartada", "scartata"],
+        "dlg.who.title": ["Qui parle", "Who speaks", "Quién habla", "Chi parla"],
+        "dlg.who.tag": ["%d protagonistes", "%d protagonists", "%d protagonistas", "%d protagonisti"],
+        "dlg.who.tag1": ["1 protagoniste", "1 protagonist", "1 protagonista", "1 protagonista"],
+        "dlg.who.note": ["D'après les protagonistes déjà reconnus (visage + voix). Les noms écrits dans les sous-titres (« STEVE : … ») passent avant.", "Based on the protagonists already recognised (face + voice). Names written in the subtitles (“STEVE: …”) come first.", "Según los protagonistas ya reconocidos (cara + voz). Los nombres escritos en los subtítulos («STEVE: …») tienen prioridad.", "In base ai protagonisti già riconosciuti (volto + voce). I nomi scritti nei sottotitoli («STEVE: …») hanno la precedenza."],
+        "dlg.who.none": ["Aucun protagoniste reconnu pour l'instant : les noms des sous-titres seront gardés, et vous pourrez nommer les personnages à la main. Pour les attribuer d'après les visages et les voix, reconnaissez-les d'abord dans l'onglet Trouver.", "No protagonist recognised yet: the names in the subtitles will be kept, and you can name the characters by hand. To attribute them from faces and voices, recognise them first in the Find tab.", "Aún no hay protagonistas reconocidos: se conservarán los nombres de los subtítulos y podrás nombrar los personajes a mano. Para atribuirlos por caras y voces, reconócelos antes en la pestaña Buscar.", "Nessun protagonista ancora riconosciuto: i nomi dei sottotitoli verranno conservati e potrai nominare i personaggi a mano. Per attribuirli da volti e voci, riconoscili prima nella scheda Trova."],
+        "dlg.who.unknown": ["Qui ?", "Who?", "¿Quién?", "Chi?"],
+        "dlg.who.all": ["Tous", "All", "Todos", "Tutti"],
+        "dlg.who.unknown.chip": ["Sans personnage · %d", "No character · %d", "Sin personaje · %d", "Senza personaggio · %d"],
+        "dlg.who.menu": ["Personnage", "Character", "Personaje", "Personaggio"],
+        "dlg.who.nobody": ["Personne (inconnu)", "Nobody (unknown)", "Nadie (desconocido)", "Nessuno (sconosciuto)"],
+        "dlg.who.again": ["Attribuer de nouveau", "Attribute again", "Atribuir de nuevo", "Attribuisci di nuovo"],
+        "dlg.who.name.ph": ["Nom du personnage", "Character name", "Nombre del personaje", "Nome del personaggio"],
         "dlg.keys.listen": ["écouter la réplique", "listen to the line", "escuchar la frase", "ascoltare la battuta"],
     ]
 }

@@ -66,6 +66,14 @@ private struct DialogueSource: View {
                             }
                         Text(note(subs: subs, hasSubs: !dialogues.sources.isEmpty)).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 2)
                     }
+                    Card(padding: 12, spacing: 6) {
+                        HStack {
+                            SectionTitle(L.t("dlg.who.title"))
+                            Spacer(minLength: 4)
+                            if dialogues.hasProtagonists { Tag(text: L.t(dialogues.protagonists.count == 1 ? "dlg.who.tag1" : "dlg.who.tag", dialogues.protagonists.count), kind: .ok) }
+                        }
+                        Text(L.t(dialogues.hasProtagonists ? "dlg.who.note" : "dlg.who.none")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
+                    }
                     if let f = dialogues.failure {
                         Text(L.t(f)).font(.system(size: 11.5)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4)
                     }
@@ -151,6 +159,7 @@ private struct DialogueRunning: View {
 private struct DialogueList: View {
     @ObservedObject var dialogues: DialogueModel
     @State private var draft = ""
+    @State private var nameDraft = ""
     @State private var cursor = 0
 
     var body: some View {
@@ -182,7 +191,18 @@ private struct DialogueList: View {
                 TextField(L.t("dlg.search"), text: $dialogues.query).textFieldStyle(.plain).font(.system(size: 12))
                 if !dialogues.query.isEmpty { Button { dialogues.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.text2) }.buttonStyle(.plain) }
             }.padding(.horizontal, 10).frame(height: 28).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+            if !dialogues.speakerNames.isEmpty || dialogues.unknownCount > 0 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        Button { dialogues.filter = nil } label: { Chip(text: L.t("dlg.who.all"), on: dialogues.filter == nil) }.buttonStyle(.plain)
+                        ForEach(dialogues.speakerNames, id: \.name) { s in
+                            Button { dialogues.filter = dialogues.filter == s.name ? nil : s.name } label: { Chip(text: "\(s.name) · \(s.count)", on: dialogues.filter == s.name) }.buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
             HStack(spacing: 6) {
+                if dialogues.hasProtagonists { Button { dialogues.attribute() } label: { Chip(text: L.t("dlg.who.again")) }.buttonStyle(.plain) }
                 if dialogues.discardedCount > 0 {
                     Button { dialogues.showDiscarded.toggle() } label: { Chip(text: L.t("dlg.discarded", dialogues.discardedCount), on: dialogues.showDiscarded) }.buttonStyle(.plain)
                 }
@@ -198,7 +218,7 @@ private struct DialogueList: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(Fmt.time(l.start)).font(.system(size: 10.5, weight: .medium).monospacedDigit()).foregroundStyle(Theme.text2).frame(width: 44, alignment: .leading)
                 VStack(alignment: .leading, spacing: 3) {
-                    if let w = l.who { Tag(text: w, kind: .accent) }
+                    if let n = dialogues.displayName(l) { Tag(text: n, kind: dialogues.isNamed(l) ? .accent : .plain) } else { Tag(text: L.t("dlg.who.unknown"), kind: .warn) }
                     if editing { editor(l) } else {
                         Text(l.text).font(.system(size: 12.5)).foregroundStyle(l.discarded ? Theme.text2 : Theme.text)
                             .strikethrough(l.discarded).fixedSize(horizontal: false, vertical: true)
@@ -215,6 +235,7 @@ private struct DialogueList: View {
                     Button { begin(l) } label: { Text(L.t("dlg.edit")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(height: 26))
                     Button { dialogues.setDiscarded(l.id, !l.discarded) } label: { Text(L.t(l.discarded ? "dlg.restore" : "dlg.discard")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(height: 26))
                 }.font(.system(size: 11.5))
+                speakerMenu(l)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
@@ -225,20 +246,45 @@ private struct DialogueList: View {
         .onTapGesture { if !editing { dialogues.select(l.id) } }
     }
 
-    private func begin(_ l: DialogueLine) { draft = l.text; cursor = 0; dialogues.editing = l.id }
+    private func begin(_ l: DialogueLine) { draft = l.text; nameDraft = l.who ?? ""; cursor = 0; dialogues.editing = l.id }
+
+    /// Choix du personnage d'une réplique : un protagoniste reconnu, un nom déjà employé, ou personne.
+    private func speakerMenu(_ l: DialogueLine) -> some View {
+        let current = dialogues.displayName(l) ?? L.t("dlg.who.unknown")
+        let used = dialogues.speakerNames.map(\.name).filter { n in !dialogues.protagonists.contains { $0.title == n } }
+        return Menu {
+            ForEach(dialogues.protagonists) { p in Button(p.title) { dialogues.setSpeaker(l.id, protagonist: p.id) } }
+            if !used.isEmpty { Divider(); ForEach(used, id: \.self) { n in Button(n) { dialogues.setName(l.id, n) } } }
+            Divider()
+            Button(L.t("dlg.who.nobody")) { dialogues.setSpeaker(l.id, protagonist: nil) }
+        } label: {
+            HStack { Text(L.t("dlg.who.menu") + " : " + current).lineLimit(1).truncationMode(.tail); Spacer(minLength: 4); Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)) }
+                .font(.system(size: 11.5)).padding(.horizontal, 10).frame(height: 26).frame(maxWidth: .infinity)
+                .background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden)
+    }
 
     private func editor(_ l: DialogueLine) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             LineEditor(text: $draft, cursor: $cursor).frame(height: 74)
                 .background(Theme.ctl, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            TextField(L.t("dlg.who.name.ph"), text: $nameDraft).textFieldStyle(.plain).font(.system(size: 12)).padding(.horizontal, 8).frame(height: 26)
+                .background(Theme.ctl, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text(L.t("dlg.edit.hint")).font(.system(size: 10.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
-                Button { dialogues.setText(l.id, draft); dialogues.editing = nil } label: { Text(L.t("dlg.save")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(kind: .primary, height: 26))
-                Button { dialogues.setText(l.id, draft); dialogues.split(l.id, at: cursor); dialogues.editing = nil } label: { Text(L.t("dlg.split")).frame(maxWidth: .infinity) }
+                Button { commit(l); dialogues.editing = nil } label: { Text(L.t("dlg.save")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(kind: .primary, height: 26))
+                Button { commit(l); dialogues.split(l.id, at: cursor); dialogues.editing = nil } label: { Text(L.t("dlg.split")).frame(maxWidth: .infinity) }
                     .buttonStyle(FlatButton(height: 26)).disabled(cursor <= 0 || cursor >= draft.count).opacity(cursor <= 0 || cursor >= draft.count ? 0.4 : 1)
                 Button { dialogues.editing = nil } label: { Text(L.t("dlg.cancel")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(height: 26))
             }.font(.system(size: 11.5))
         }
+    }
+
+    /// Enregistre le texte et, s'il a changé, le nom du personnage.
+    private func commit(_ l: DialogueLine) {
+        dialogues.setText(l.id, draft)
+        let n = nameDraft.trimmingCharacters(in: .whitespaces)
+        if n != (l.who ?? ""), !n.isEmpty { dialogues.setName(l.id, n) }
     }
 
     private var footer: some View {
