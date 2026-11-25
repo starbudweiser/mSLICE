@@ -26,6 +26,13 @@ final class AppAgentHost: AgentHost {
     func userExportFolder() -> String? { model.opts.folder }
     func analyze(_ url: URL, force: Bool) async -> AnalysisIndex? { await doc(url)?.find.analyzeAndWait(force: force) }
     func recognize(_ url: URL) async -> FaceIndex? { await doc(url)?.find.recognizeAndWait() }
+    func recognizeVoices(_ url: URL) async -> VoiceIndex? { await doc(url)?.find.recognizeVoicesAndWait() }
+    func editVoice(_ id: Int32, name: String?, person: Int32?, of url: URL) -> Bool {
+        guard let d = doc(url), d.find.voices != nil else { return false }
+        if let name { d.find.renameVoice(id, to: name) }
+        if let person { d.find.linkVoice(id, to: person >= 0 ? person : nil) }
+        return true
+    }
     func renameSubject(_ id: Int32, to name: String, of url: URL) -> Bool {
         guard let d = doc(url), d.find.faces != nil else { return false }
         d.find.rename(id, to: name); return true

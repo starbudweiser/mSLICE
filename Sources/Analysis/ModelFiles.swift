@@ -26,7 +26,14 @@ enum ModelCatalog {
         url: URL(string: "https://github.com/starbudweiser/mSLICE-models/releases/download/characters-auraface-1/AuraFace-CoreML-8bit.zip"),
         sha256: "2c1d331d88b4b7544a5835b810e6ca7203fcfc7d04b0be614787b4012331277b",
         license: "Apache 2.0 (AuraFace, fal.ai)", kind: .coreMLArchive)
-    static let all = [characters]
+    /// Voix : CAM++ (3D-Speaker, Alibaba, Apache 2.0, entraîné sur VoxCeleb), converti en Core ML 32 bits (aucun réentraînement), hébergé dans une release du
+    /// dépôt public `starbudweiser/mSLICE-models`. L'adresse n'existe qu'une fois la release `voices-campplus-1` publiée (avec l'accord de Stéphan) ; en attendant, installation locale par `--install-model <zip> voices`.
+    static let voices = ModelSpec(
+        id: "voices", sizeMB: 27,
+        url: URL(string: "https://github.com/starbudweiser/mSLICE-models/releases/download/voices-campplus-1/CAMPPlus-CoreML.zip"),
+        sha256: "7876dfbfd9df44110e7b94fc1bbee209b92726ff1a91ffe2acf1cfe6dd99dff6",
+        license: "Apache 2.0 (CAM++, 3D-Speaker)", kind: .coreMLArchive)
+    static let all = [characters, voices]
 }
 
 struct ModelRejected: LocalizedError { let errorDescription: String? }

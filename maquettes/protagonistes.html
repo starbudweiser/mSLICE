@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>mSLICE — Maquette Protagonistes (Flat Mat)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.4 -apple-system,"SF Pro Text",system-ui,sans-serif;background:#0b0b0d;color:#eee;-webkit-font-smoothing:antialiased}
+.top{padding:18px 28px 6px;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.top h1{font-size:20px;font-weight:700}.top .sub0{color:#999}
+.tabs{display:flex;gap:6px;padding:10px 28px;flex-wrap:wrap;align-items:center}
+.tabs button{background:#222;color:#eee;border:0;padding:8px 16px;border-radius:999px;font:inherit;font-weight:500;cursor:pointer}
+.tabs button.on{background:#ffd21e;color:#222}
+.tabs .sep{width:18px}
+.legend{color:#aaa;padding:0 28px 12px;max-width:1200px;line-height:1.5}
+.legend b{color:#fff}
+.stage{padding:6px 28px 40px}
+
+/* ---------- jetons Flat Mat (identiques à l'appli, Theme.swift) ---------- */
+.win{--rw:12px;--rb:12px;--rc:8px;--rch:999px;--ph:#ff453a;--sand:#e8a257}
+.win[data-th=sombre]{--bg:#131316;--card:#1c1c1f;--ctl:#2c2c31;--t:#f5f5f7;--t2:#98989f;--acc:#0a84ff;--onacc:#fff;--m:#f08a52;--seg:#f08a52;--ok:#30d158;--warn:#ff9f0a;--line:#303035;--dim:rgba(28,28,31,.68);--sh:0 18px 50px rgba(0,0,0,.5)}
+.win[data-th=clair]{--bg:#f4f1ec;--card:#fff;--ctl:#ebe6de;--t:#26231e;--t2:#7b756a;--acc:#26231e;--onacc:#f4f1ec;--m:#d9622b;--seg:#d9622b;--ok:#3f8f5a;--warn:#b7791f;--line:#e3ddd2;--dim:rgba(255,255,255,.68);--sh:0 18px 50px rgba(60,40,10,.18)}
+
+/* ---------- fenêtre ---------- */
+.win{width:1200px;height:800px;display:grid;grid-template-columns:232px 1fr 304px;grid-template-rows:auto 1fr;overflow:hidden;position:relative;
+ background:var(--bg);color:var(--t);border-radius:var(--rw);box-shadow:var(--sh);font-size:12.5px}
+.bar{grid-column:1/4;display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:7px}.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.brand{font-weight:700;font-size:15px;margin-left:8px}.brand b{color:var(--m)}
+.finfo{margin-left:14px;color:var(--t2);font-size:12px;white-space:nowrap}.finfo b{color:var(--t);font-weight:600}
+.bar .r{margin-left:auto;display:flex;gap:8px}
+.btn{background:var(--ctl);color:var(--t);border:0;height:30px;padding:0 12px;border-radius:var(--rc);font:inherit;font-weight:500;white-space:nowrap;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.btn.pri{background:var(--acc);color:var(--onacc);font-weight:600}
+.btn.wide{width:100%}
+.btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.h{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--t2)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--rb);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.hh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.sub{color:var(--t2);font-size:11.5px}
+.tag{font-size:10.5px;font-weight:600;padding:0 8px;height:18px;line-height:18px;border-radius:var(--rch);background:var(--ctl);color:var(--t2);white-space:nowrap;display:inline-block}
+.tag.ok{background:color-mix(in srgb,var(--ok) 22%,transparent);color:var(--ok)}
+.tag.ver{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--t2)}
+kbd{font:600 11px ui-monospace,Menlo,monospace;background:var(--ctl);border:1px solid color-mix(in srgb,var(--t) 16%,transparent);border-radius:5px;padding:1px 6px;color:var(--t);min-width:20px;text-align:center;display:inline-block}
+.sw{width:34px;height:20px;border-radius:99px;background:var(--ctl);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.sw.on{background:var(--acc)}.sw.on::after{left:16px}
+.seg3{display:flex;background:var(--ctl);border-radius:var(--rch);padding:3px;gap:2px;flex:none}
+.seg3 span{flex:1;min-width:0;text-align:center;height:26px;line-height:26px;border-radius:var(--rch);color:var(--t2);font-weight:600;font-size:12px;white-space:nowrap}
+.seg3 span.on{background:var(--acc);color:var(--onacc)}
+
+/* ---------- gauche ---------- */
+.side{padding:14px 12px;display:flex;flex-direction:column;gap:6px;border-right:1px solid var(--line);overflow:hidden}
+.side .h{padding:0 4px 4px}
+.file{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:8px;border-radius:var(--rc);min-width:0}
+.file.on{background:var(--ctl)}
+.fi{width:34px;height:34px;border-radius:var(--rc);display:grid;place-items:center;font-weight:700;font-size:9.5px;background:var(--ctl);color:var(--t)}
+.file.on .fi{background:var(--card)}
+.fn{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs{color:var(--t2);font-size:11.5px;white-space:nowrap;margin-top:2px}
+.drop{margin-top:auto;border:1.5px dashed color-mix(in srgb,var(--t) 28%,transparent);border-radius:var(--rb);padding:14px 12px;text-align:center;color:var(--t2);font-size:11.5px;display:flex;flex-direction:column;gap:6px}
+.drop b{color:var(--t);font-size:12.5px}
+
+/* ---------- centre ---------- */
+.main{padding:14px;display:flex;flex-direction:column;gap:10px;overflow:hidden;min-width:0}
+.pv{flex:1;min-height:0;background:#0c0c0e;border-radius:var(--rb);display:grid;place-items:center;overflow:hidden;position:relative}
+.pv img{height:100%;max-width:100%;object-fit:contain;display:block}
+.ov{position:absolute;background:rgba(0,0,0,.58);color:#fff;font-size:11.5px;padding:3px 10px;border-radius:var(--rch);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ov.a{left:12px;top:12px}.ov.c{left:12px;bottom:12px;font:600 13px ui-monospace,Menlo,monospace}.ov.d{right:12px;bottom:12px}
+.tr{display:flex;align-items:center;gap:8px;height:42px;flex:none}
+.tc{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;margin-right:6px}.tc small{font-size:12px;color:var(--t2);font-weight:500}
+.tb{width:34px;height:34px;border-radius:var(--rc);background:var(--ctl);display:grid;place-items:center;color:var(--t)}
+.tb.p{background:var(--acc);color:var(--onacc);width:42px}
+.tb svg{width:13px;height:13px;fill:currentColor}
+.scal{margin-left:auto;display:flex;gap:8px}
+.scal .btn{height:34px;padding:0 12px 0 9px;gap:8px}
+.scal .btn svg{width:16px;height:16px}
+.tw{background:var(--card);border:1px solid var(--line);border-radius:var(--rb);padding:10px 12px 8px;position:relative;flex:none}
+.th{display:flex;align-items:center;gap:8px;height:26px;margin-bottom:4px}
+.th .chip{padding:0 10px;height:24px;line-height:24px;border-radius:var(--rch);background:var(--ctl);font-size:11.5px;white-space:nowrap}
+.th .chip.on{background:var(--acc);color:var(--onacc);font-weight:600}
+.slid{width:86px;height:5px;border-radius:9px;background:var(--ctl);position:relative}.slid i{position:absolute;left:0;top:0;bottom:0;width:8%;background:var(--acc);border-radius:inherit}.slid u{position:absolute;left:8%;top:50%;width:13px;height:13px;margin:-6.5px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.rul{height:22px;position:relative}
+.rul .kt{position:absolute;bottom:0;width:1px;height:5px;background:var(--t2);opacity:.45}.rul .kt.mj{height:9px;opacity:.9}
+.rul .lb{position:absolute;top:0;font-size:10.5px;color:var(--t2);transform:translateX(-50%);font-variant-numeric:tabular-nums}
+.body{position:relative;display:flex;flex-direction:column;gap:4px}
+.film{display:flex;gap:1px;height:40px;border-radius:5px;overflow:hidden}.film img{flex:1;min-width:0;height:100%;object-fit:cover}
+.wv{display:flex;align-items:center;gap:1px;height:70px;background:color-mix(in srgb,var(--t) 5%,transparent);border-radius:5px}
+.wv i{flex:1;border-radius:1px;background:var(--t2);opacity:.45}
+.lane{position:relative;height:14px;border-radius:4px;background:color-mix(in srgb,var(--t) 5%,transparent);display:none}
+.win[data-s=resultats] .lane,.win[data-s=choix] .lane,.win[data-s=ajoutes] .lane{display:block}
+.lane i{position:absolute;top:3px;bottom:3px;min-width:2px;border-radius:2px;background:var(--acc)}
+.lane i.off{background:var(--t2);opacity:.35}
+.lane-lb{position:absolute;right:6px;top:0;font-size:9.5px;line-height:14px;color:var(--t2);font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+.sgx{position:absolute;top:0;bottom:0;border-radius:4px;background:color-mix(in srgb,var(--seg) 14%,transparent);box-shadow:inset 0 0 0 1.5px var(--seg);display:none}
+.win[data-s=ajoutes] .sgx{display:block}
+.ph{position:absolute;top:-14px;bottom:0;width:2px;margin-left:-1px;background:var(--ph);z-index:3}
+.ph span{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--ph);color:#fff;font:600 10.5px ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:5px;white-space:nowrap}
+.keys{display:flex;gap:10px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,var(--t) 10%,transparent);color:var(--t2);font-size:10.5px;white-space:nowrap;overflow:hidden}
+.keys span{display:inline-flex;gap:5px;align-items:center}
+
+/* ---------- droite : onglet Trouver ---------- */
+.right{padding:14px 14px 14px 0;display:flex;flex-direction:column;gap:10px;overflow:hidden;min-width:0}
+.scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.pane{display:none;flex-direction:column;gap:10px;flex:1;min-height:0}
+.win[data-s=avant] .p-avant,.win[data-s=analyse] .p-analyse,.win[data-s=resultats] .p-res,.win[data-s=choix] .p-choix,.win[data-s=ajoutes] .p-ajoutes,.win[data-s=ajoutes] .p-res{display:flex}
+.p-avant,.p-analyse{justify-content:center}   /* carte seule : centrée dans sa zone (Socle) */
+.p-ajoutes{flex:none}
+.okrow{display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:center}
+.okrow .big{width:32px;height:32px}.okrow .big svg{width:16px;height:16px}
+.center{text-align:center;align-items:center}
+.lead{font-size:13px;font-weight:600}
+.big{width:44px;height:44px;border-radius:50%;background:var(--ctl);display:grid;place-items:center;color:var(--t2)}
+.big svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.facts{display:flex;flex-direction:column;gap:5px;width:100%;text-align:left}
+.facts div{display:grid;grid-template-columns:16px 1fr;gap:8px;align-items:start;color:var(--t2);font-size:11.5px}
+.facts svg,.ic{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;margin-top:1px;flex:none}
+.prog{height:6px;border-radius:9px;background:var(--ctl);overflow:hidden;width:100%}.prog i{display:block;height:100%;background:var(--acc);border-radius:inherit}
+.steps{display:flex;flex-direction:column;gap:6px;width:100%}
+.step{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;font-size:12px}
+.step .v{color:var(--t2);font-variant-numeric:tabular-nums;font-size:11.5px}
+.step.done svg{color:var(--ok)}.step.wait{color:var(--t2)}
+.search{display:flex;align-items:center;gap:8px;background:var(--ctl);border-radius:0;height:34px;padding:0 10px;color:var(--t2);font-size:12px}
+.search svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
+.search span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11.5px;color:var(--t2)}
+.dl .btn{height:24px;font-size:11.5px;padding:0 10px}
+.avs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 6px}
+.av{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border-radius:var(--rc);min-width:0;cursor:pointer}
+.av img{width:54px;height:54px;border-radius:50%;object-fit:cover;display:block;box-shadow:0 0 0 1px var(--line)}
+.av.on{background:var(--ctl)}.av.on img{box-shadow:0 0 0 2px var(--acc)}
+.av .n{font-weight:600;font-size:11.5px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.av .n.unnamed{color:var(--t2);font-weight:500}
+.av .m{color:var(--t2);font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rows{display:flex;flex-direction:column;gap:2px}
+.row{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;padding:6px 8px;border-radius:var(--rc);min-width:0}
+.row.on{background:var(--ctl)}
+.row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .val{color:var(--t2);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row.on .val{color:var(--t)}
+.none{color:var(--t2);font-size:11px;line-height:1.4;padding:2px 8px 0}
+.flt{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 4px;border-radius:var(--rch);background:var(--ctl);font-size:12px;font-weight:600;white-space:nowrap}
+.pill img{width:18px;height:18px;border-radius:50%;object-fit:cover}
+.pill .x{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;color:var(--t2)}
+.pill .x svg{width:8px;height:8px;stroke:currentColor;stroke-width:2.4}
+.pill .ic{margin:0 0 0 4px}
+.op{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--t2);padding:0 2px}
+.opt{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.pas{display:flex;flex-direction:column;gap:4px}
+.pa{display:grid;grid-template-columns:16px 64px 1fr;gap:8px;align-items:center;padding:4px;border-radius:var(--rc)}
+.pa img{width:64px;height:36px;object-fit:cover;border-radius:4px;display:block}
+.pa .tm{font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;white-space:nowrap}
+.pa .tm small{display:block;color:var(--t2);font-weight:500;font-size:11px}
+.ck{width:14px;height:14px;border-radius:4px;background:var(--acc);display:grid;place-items:center}
+.ck svg{width:9px;height:9px;stroke:var(--onacc);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ck.no{background:transparent;box-shadow:inset 0 0 0 1.5px var(--t2)}.ck.no svg{display:none}
+.pa.out{opacity:.5}
+.foot{display:flex;flex-direction:column;gap:8px;flex:none}
+.sumline{display:flex;justify-content:space-between;align-items:baseline;font-size:12px}
+.sumline b{font-variant-numeric:tabular-nums}
+.okbox{display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center}
+.okbox .big{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
+
+.go{height:42px;font-size:13.5px;background:var(--sand);color:#2a1d0c;font-weight:600}
+/* ---------- ajouts : protagonistes ---------- */
+.win{grid-template-columns:200px 1fr 320px}
+.pv .ph2{position:absolute;inset:0;display:grid;place-items:center}
+.pv img.sc{height:100%}
+.lanes{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+.ln{display:grid;grid-template-columns:92px 1fr;gap:8px;align-items:center;height:24px}
+.ln .who{font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;gap:6px;align-items:center}
+.ln .who i{width:8px;height:8px;border-radius:50%;flex:none}
+.ln .tk{position:relative;height:100%;border-radius:4px;background:color-mix(in srgb,var(--t) 5%,transparent)}
+.ln .tk b{position:absolute;top:3px;height:8px;border-radius:2px;opacity:.95}
+.ln .tk em{position:absolute;top:13px;height:5px;border-radius:2px;opacity:.65}
+.ln.off{opacity:.3}
+.legk{display:flex;gap:14px;color:var(--t2);font-size:10.5px;margin-top:4px;padding-left:100px}
+.legk span{display:inline-flex;gap:5px;align-items:center}
+.legk b{width:14px;height:6px;border-radius:2px;background:var(--t2)}.legk em{width:14px;height:3px;border-radius:2px;background:var(--t2);opacity:.6}
+.sgx2{position:absolute;top:0;bottom:0;border-radius:3px;box-shadow:inset 0 0 0 1.5px var(--seg);background:color-mix(in srgb,var(--seg) 14%,transparent);pointer-events:none}
+.pp{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:7px 8px;border-radius:var(--rc);cursor:pointer}
+.pp.on{background:var(--ctl)}
+.pp img{width:44px;height:44px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px var(--c,var(--line))}
+.pp .nm{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp .nm.un{color:var(--t2);font-weight:500}
+.pp .st{color:var(--t2);font-size:11px;margin-top:2px;white-space:nowrap}
+.pp .ck{flex:none}
+.sug{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:center}
+.sug .pair{display:flex}.sug .pair img{width:26px;height:26px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px var(--card)}.sug .pair img+img{margin-left:-8px}
+.sug .t{font-size:11.5px;line-height:1.4}
+.btnrow{display:flex;gap:6px}
+.btnrow .btn{height:26px;font-size:11.5px;padding:0 10px}
+.opt2{display:flex;flex-direction:column;gap:6px}
+.fl{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--t2)}
+.fl div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:grid;grid-template-columns:14px 1fr;gap:6px}
+.vwave{display:flex;align-items:center;gap:1px;height:170px;border-radius:var(--rb);background:var(--card);border:1px solid var(--line);padding:0 10px;position:relative;flex:none}
+.vwave i{flex:1;border-radius:1px;min-width:1px}
+.pane{display:none}
+.win[data-s="modeles"] .p-modeles,.win[data-s="liste"] .p-liste,.win[data-s="export"] .p-export,.win[data-s="audio"] .p-audio{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}
+.vonly{display:none}.win[data-s="audio"] .vonly{display:block}.win[data-s="audio"] .vid{display:none}
+.mdl{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:center}
+</style></head><body>
+
+<div class="top"><h1>mSLICE — Protagonistes (visage + voix)</h1><span class="sub0">Maquette Flat Mat · vrai contenu : « Top 5 des répliques cultes de Dustin » (1:01)</span></div>
+<div class="tabs" id="states">
+  <button data-s="modeles">1. Modèles (visages ✓, voix à télécharger)</button>
+  <button data-s="liste" class="on">2. Protagonistes détectés</button>
+  <button data-s="export">3. Choisir, isoler, exporter</button>
+  <button data-s="audio">4. Fichier audio seul</button>
+  <span class="sep"></span>
+  <button data-th="sombre" class="on">Sombre</button>
+  <button data-th="clair">Clair</button>
+</div>
+<p class="legend" id="leg"></p>
+
+<div class="stage">
+<div class="win" id="win" data-th="sombre" data-s="liste">
+  <div class="bar">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="brand"><b>m</b>SLICE</div>
+    <div class="finfo"><b id="fname">Top 5 des répliques cultes de Dustin.mp4</b> · <span id="fmeta">1080×1920 · H.264 · 30 i/s · AAC · 1:00.9 · 13 Mo</span></div>
+    <div class="r"><span class="btn">Raccourcis <kbd>⌘/</kbd></span></div>
+  </div>
+
+  <aside class="side">
+    <div class="h">Fichiers ouverts · 1</div>
+    <div class="file on"><div class="fi" id="fext">MP4</div><div style="min-width:0"><div class="fn" id="fn2">Top 5 des répliques cultes de Dustin.mp4</div><div class="fs">1:01 · 13 Mo</div></div></div>
+    <div class="drop"><b>Déposez des fichiers ici</b><span>ou clic droit dans le Finder</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="pv vid"><img class="sc" src="assets-protagonistes/ecran.jpg" alt=""><span class="ov a">Top 5 des répliques cultes de Dustin.mp4</span><span class="ov c">0:10.0</span><span class="ov d">image 300 · 30 i/s</span></div>
+    <div class="vonly" style="flex:none"><div class="vwave" id="vw"></div></div>
+    <div class="tw">
+      <div class="th"><span class="sub">Zoom</span><div class="slid"><i></i><u></u></div><span class="sub">1×</span><span class="chip on">Aimant : images clés</span><span class="chip" id="chipmode">Piste : visage + voix</span></div>
+      <div class="rul" id="rul"></div>
+      <div class="body" id="tl">
+        <div class="film vid" id="film"></div>
+        <div class="wv" id="wv" style="height:46px"></div>
+        <div class="lanes" id="lanes"></div>
+        <div class="legk"><span class="vid"><b></b>visage à l'écran</span><span><em></em>voix qui parle</span></div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="right">
+    <div class="seg3"><span>Édition</span><span class="on">Trouver</span><span>Agent</span></div>
+
+    <!-- 1. modèles -->
+    <div class="pane p-modeles">
+      <div class="card">
+        <div class="hh"><span class="h">Protagonistes</span></div>
+        <div class="sub" style="line-height:1.45">mSLICE repère chaque personne par son visage et par sa voix, puis réunit les deux : « Dustin » = son visage + sa voix. Tout reste sur ce Mac.</div>
+      </div>
+      <div class="card">
+        <div class="hh"><span class="h">Visages</span><span class="tag ok">Installé</span></div>
+        <div class="mdl"><span class="sub">AuraFace · 60 Mo · Apache 2.0</span><span class="btn" style="height:24px;font-size:11.5px">Supprimer</span></div>
+      </div>
+      <div class="card">
+        <div class="hh"><span class="h">Voix</span><span class="tag">Optionnel</span></div>
+        <div class="sub" style="line-height:1.45">Distingue les personnes qui parlent d'après le timbre de leur voix, même quand elles sont hors champ ou quand le fichier est de l'audio seul.</div>
+        <div class="mdl"><span class="sub">Modèle de voix · ≈ 25 Mo · licence libre</span><span class="btn pri" style="height:26px;font-size:11.5px">Télécharger</span></div>
+        <div class="sub" style="font-size:11px">Téléchargé seulement avec votre accord. Rien n'est envoyé.</div>
+      </div>
+      <div style="margin-top:auto" class="foot"><span class="btn pri wide" style="height:36px">Analyser les protagonistes</span><div class="sub" style="text-align:center">Environ 2 s par minute de vidéo.</div></div>
+    </div>
+
+    <!-- 2. liste -->
+    <div class="pane p-liste">
+      <div class="scroll" style="flex:1;min-height:0">
+        <div class="card">
+          <div class="hh"><span class="h">Protagonistes · 3</span><span class="tag ok">visage + voix</span></div>
+          <div class="rows" id="pl"></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">À vérifier</span><span class="tag">2</span></div>
+          <div class="sug"><div class="pair"><img src="assets-protagonistes/dustin.png" alt=""><img src="assets-protagonistes/dustin2.png" alt=""></div><div class="t">Deux visages semblent être <b>Dustin</b> (casquette, de profil). Les réunir ?</div></div>
+          <div class="btnrow"><span class="btn pri">Réunir</span><span class="btn">Ce sont deux personnes</span></div>
+          <div class="sug" style="margin-top:6px"><div class="pair"><img src="assets-protagonistes/p3.png" alt=""><img src="assets-protagonistes/p4.png" alt=""></div><div class="t">Deux visages en <b>veste verte</b>, dans le même plan : même personne ?</div></div>
+          <div class="btnrow"><span class="btn pri">Réunir</span><span class="btn">Non</span></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Voix non associées</span><span class="tag">1</span></div>
+          <div class="sug"><div class="big" style="width:44px;height:44px"><svg viewBox="0 0 24 24"><path d="M5 12h3M10 9v6M14 7v10M18 10v4"/></svg></div><div class="t"><b>Voix 4</b> parle 0:45 → 0:51 sans visage à l'écran. Écoutez, puis donnez-lui un nom ou associez-la à un protagoniste.</div></div>
+          <div class="btnrow"><span class="btn">Écouter</span><span class="btn">Associer…</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. choisir, isoler, exporter -->
+    <div class="pane p-export">
+      <div class="scroll" style="flex:1;min-height:0">
+        <div class="card">
+          <div class="hh"><span class="h">Protagonistes</span><span class="sub" id="selc"></span></div>
+          <div class="rows" id="pl2"></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Garder les moments où il…</span></div>
+          <div class="seg3" id="modeseg"><span data-m="vis" class="on">est visible</span><span data-m="voi">parle</span><span data-m="seul">est seul</span></div>
+          <div class="sub" id="modehelp" style="line-height:1.4"></div>
+          <div class="opt"><span>Image entière (plans entiers)</span><span class="sw"></span></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Sortie</span><span class="sub" id="sumdur"></span></div>
+          <div class="seg3" id="outseg"><span data-o="each" class="on">Un fichier chacun</span><span data-o="merged">Tout fusionné</span></div>
+          <div class="fl" id="files"></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="btn pri wide" style="height:36px" id="addbtn"></span>
+        <span class="btn wide go" id="gobtn"></span>
+      </div>
+    </div>
+
+    <!-- 4. audio -->
+    <div class="pane p-audio">
+      <div class="scroll" style="flex:1;min-height:0">
+        <div class="card">
+          <div class="hh"><span class="h">Voix · 3</span><span class="tag ok">d'après la voix</span></div>
+          <div class="sub" style="line-height:1.4">Pas d'image : les protagonistes sont reconnus seulement à leur voix. La couleur de l'onde montre qui parle.</div>
+          <div class="rows" id="vl"></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Sortie</span><span class="sub" id="sumdurA"></span></div>
+          <div class="seg3"><span class="on">Un fichier chacun</span><span>Tout fusionné</span></div>
+          <div class="fl" id="filesA"></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn pri wide" style="height:36px">Ajouter aux morceaux</span><span class="btn wide go" id="gobtnA"></span></div>
+    </div>
+  </aside>
+</div>
+</div>
+
+<script>
+const D=60.9;
+// Visages : mesure réelle du moteur (AuraFace) sur ce fichier. Voix : RÉPARTITION ILLUSTRATIVE (modèle de voix pas encore essayé) ; la parole, elle, est mesurée.
+const P=[
+ {id:'dustin',name:'Dustin',col:'#ff9f0a',img:'dustin',
+  face:[[0,1.5],[4.5,5.5],[8.5,12.5],[15.5,18.5],[24.5,32.5],[34.5,37.5],[39.5,43.5]],
+  alone:[[8.5,12.5],[15.5,18.5],[29.5,30.5],[34.5,35.5],[41.5,43.5]],
+  voice:[[8.5,15],[21.5,24.5],[36,43.5]]},
+ {id:'steve',name:'Steve',col:'#0a84ff',img:'steve',
+  face:[[24.5,28.5],[30.5,41.5],[48.5,60.5]],
+  alone:[[32.5,34.5],[38.5,39.5],[48.5,60.5]],
+  voice:[[24.5,27.5],[30,35.5],[45.5,59.5]]},
+ {id:'vert',name:'',col:'#30d158',img:'p3',
+  face:[[0,7.5]],alone:[[6.5,7.5]],voice:[[0,7.5]]}];
+const sum=a=>a.reduce((s,[x,y])=>s+y-x,0);
+const mmss=s=>Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
+const dur=s=>s>=60?mmss(s):Math.round(s)+' s';
+const pct=t=>(t/D*100).toFixed(3)+'%';
+const win=document.getElementById('win');
+const nameOf=(p,i)=>p.name||(win.dataset.s==='audio'?'Voix ':'Personnage ')+(i+1);
+
+const rul=document.getElementById('rul');
+for(let m=0;m<=60;m+=5){const k=document.createElement('i');k.className='kt mj';k.style.left=pct(m);rul.appendChild(k);const l=document.createElement('span');l.className='lb';l.style.left=pct(Math.max(m,1.5));l.textContent=mmss(m);rul.appendChild(l)}
+document.getElementById('film').innerHTML=[...Array(16).keys()].map(k=>`<img src="assets-protagonistes/film${k}.jpg" alt="">`).join('');
+let a=11;const rnd=()=>{a=(a*16807)%2147483647;return a/2147483647};
+const speech=[[0,13],[22,26],[28.5,43.5],[45.5,59.5]];
+document.getElementById('wv').innerHTML=[...Array(260).keys()].map(i=>{const t=i/260*D;const s=speech.some(([x,y])=>t>=x&&t<=y);return `<i style="height:${(s?35+rnd()*60:8+rnd()*14).toFixed(0)}%"></i>`}).join('');
+
+let sel=new Set(['dustin','steve']),mode='vis',out='each';
+function ivsOf(p){return mode==='vis'?p.face:mode==='voi'?p.voice:p.alone}
+function merge(iv){const r=[];for(const [x,y] of [...iv].sort((u,v)=>u[0]-v[0])){const l=r[r.length-1];if(l&&x-l[1]<1.5)l[1]=Math.max(l[1],y);else r.push([x,y])}return r}
+function lanes(){
+  const L=document.getElementById('lanes');
+  L.innerHTML=P.map((p,i)=>{const on=win.dataset.s==='liste'||win.dataset.s==='modeles'||win.dataset.s==='audio'||sel.has(p.id);
+   const f=win.dataset.s==='audio'?'':p.face.map(([x,y])=>`<b style="left:${pct(x)};width:${pct(y-x)};background:${p.col}"></b>`).join('');
+   const v=p.voice.map(([x,y])=>`<em style="left:${pct(x)};width:${pct(y-x)};background:${p.col}"></em>`).join('');
+   let hl='';if(win.dataset.s==='export'&&sel.has(p.id))hl=merge(ivsOf(p).map(([x,y])=>[Math.max(0,x-0.4),Math.min(D,y+0.4)])).map(([x,y])=>`<div class="sgx2" style="left:${pct(x)};width:${pct(y-x)}"></div>`).join('');
+   return `<div class="ln${on?'':' off'}"><span class="who"><i style="background:${p.col}"></i>${nameOf(p,i)}</span><div class="tk">${f}${v}${hl}</div></div>`}).join('');
+}
+function ppRow(p,i,withCk){const fs=sum(p.face),vs=sum(p.voice);const on=sel.has(p.id);
+ return `<div class="pp${withCk&&on?' on':''}" style="--c:${p.col}"><img src="assets-protagonistes/${p.img}.png" alt=""><div style="min-width:0"><div class="nm${p.name?'':' un'}">${nameOf(p,i)}</div><div class="st">visage ${dur(fs)} · voix ${dur(vs)} · ${p.face.length} apparition${p.face.length>1?'s':''}</div></div>${withCk?`<span class="ck${on?'':' no'}"><svg viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3L9.5 3.5"/></svg></span>`:''}</div>`}
+document.getElementById('pl').innerHTML=P.map((p,i)=>ppRow(p,i,false)).join('');
+const HELP={vis:'Tous les moments où son visage est à l\'écran, même s\'il se tait.',voi:'Tous les moments où l\'on entend sa voix, même hors champ.',seul:'Seulement quand il est le seul visage à l\'écran.'};
+function refresh(){
+  document.getElementById('pl2').innerHTML=P.map((p,i)=>ppRow(p,i,true)).join('');
+  document.querySelectorAll('#pl2 .pp').forEach((e,i)=>e.onclick=()=>{const id=P[i].id;sel.has(id)?sel.delete(id):sel.add(id);refresh()});
+  document.getElementById('selc').textContent=sel.size+' choisi'+(sel.size>1?'s':'');
+  document.getElementById('modehelp').textContent=HELP[mode];
+  document.querySelectorAll('#modeseg span').forEach(s=>s.classList.toggle('on',s.dataset.m===mode));
+  document.querySelectorAll('#outseg span').forEach(s=>s.classList.toggle('on',s.dataset.o===out));
+  const ch=P.filter(p=>sel.has(p.id));
+  const per=ch.map(p=>({p,iv:merge(ivsOf(p).map(([x,y])=>[Math.max(0,x-0.4),Math.min(D,y+0.4)]))}));
+  const all=merge(per.flatMap(o=>o.iv));
+  const nPieces=out==='each'?per.reduce((s,o)=>s+o.iv.length,0):all.length;
+  const total=out==='each'?per.reduce((s,o)=>s+sum(o.iv),0):sum(all);
+  document.getElementById('sumdur').textContent=`${nPieces} morceaux · ${dur(total)}`;
+  const base='Top 5 des répliques cultes de Dustin';
+  const nm=p=>nameOf(p,P.indexOf(p));
+  const names=out==='each'?per.map(o=>`${base} – ${nm(o.p)}.mp4`):(ch.length?[`${base} – ${ch.map(nm).join(' + ')}.mp4`]:[]);
+  const ico='<svg class="ic" viewBox="0 0 24 24" style="margin:0"><path d="M7 3h7l4 4v14H7z"/></svg>';
+  document.getElementById('files').innerHTML=names.map(n=>`<div>${ico}<span style="overflow:hidden;text-overflow:ellipsis">${n}</span></div>`).join('')||'<div><span></span><span>Choisissez un protagoniste.</span></div>';
+  document.getElementById('addbtn').textContent=`Ajouter ${nPieces} morceaux à l'édition`;
+  document.getElementById('gobtn').textContent=out==='each'?`Exporter ${names.length} fichier${names.length>1?'s':''}`:'Exporter 1 fichier fusionné';
+  lanes();
+}
+document.querySelectorAll('#modeseg span').forEach(s=>s.onclick=()=>{mode=s.dataset.m;refresh()});
+document.querySelectorAll('#outseg span').forEach(s=>s.onclick=()=>{out=s.dataset.o;refresh()});
+
+// audio seul : onde colorée par locuteur, liste des voix
+const spk=[[0,3.3,2],[3.3,8.3,0],[8.5,15,0],[21.5,24.5,0],[24.5,27.5,1],[28.5,36,1],[36,43.5,0],[45.5,59.5,1]];
+document.getElementById('vw').innerHTML=[...Array(300).keys()].map(i=>{const t=i/300*D;const s=spk.find(([x,y])=>t>=x&&t<y);const h=s?30+rnd()*65:5+rnd()*8;return `<i style="height:${h.toFixed(0)}%;background:${s?P[s[2]].col:'var(--t2)'};opacity:${s?1:.4}"></i>`}).join('');
+document.getElementById('vl').innerHTML=P.map((p,i)=>{const v=sum(p.voice);return `<div class="pp" style="--c:${p.col}"><div class="big" style="width:44px;height:44px;box-shadow:0 0 0 2px ${p.col}"><svg viewBox="0 0 24 24"><path d="M5 12h3M10 9v6M14 7v10M18 10v4"/></svg></div><div style="min-width:0"><div class="nm${p.name?'':' un'}">${p.name?p.name:'Voix '+(i+1)}</div><div class="st">voix ${dur(v)} · ${p.voice.length} prises de parole</div></div></div>`}).join('');
+{const tot=P.reduce((s,p)=>s+sum(p.voice),0);document.getElementById('sumdurA').textContent=`${P.reduce((s,p)=>s+p.voice.length,0)} morceaux · ${dur(tot)}`;
+ document.getElementById('filesA').innerHTML=P.map((p,i)=>`<div><svg class="ic" viewBox="0 0 24 24" style="margin:0"><path d="M7 3h7l4 4v14H7z"/></svg><span style="overflow:hidden;text-overflow:ellipsis">Top 5 des répliques cultes de Dustin – ${p.name?p.name:'Voix '+(i+1)}.m4a</span></div>`).join('');
+ document.getElementById('gobtnA').textContent='Exporter 3 fichiers audio'}
+
+const L={
+ modeles:"<b>Modèles.</b> Les visages sont déjà installés (modèle de la 1.3). La voix est un second modèle <b>optionnel</b>, téléchargé avec accord, comme celui des visages. Un seul bouton lance tout.",
+ liste:"<b>Protagonistes détectés.</b> Vrais chiffres de cette vidéo (visages mesurés). Constat réel : le moteur actuel coupe Dustin en <b>2</b> groupes et le personnage en veste verte en <b>2</b> ; d'où la section « À vérifier », qui propose de réunir. Sous la timeline : une ligne par protagoniste, <b>trait épais = visage</b>, <b>trait fin = voix</b>. <i>Répartition des voix illustrative : le modèle de voix n'est pas encore essayé (la parole, elle, est mesurée).</i>",
+ export:"<b>Choisir, isoler, exporter.</b> On coche un ou plusieurs protagonistes, on dit quels moments garder (visible / parle / seul à l'écran), puis soit <b>un fichier par protagoniste</b>, soit <b>tout fusionné</b>. Les passages retenus s'encadrent sur la timeline. « Ajouter à l'édition » les pose comme morceaux ; le bouton sable exporte directement.",
+ audio:"<b>Fichier audio seul.</b> Même idée sans image : l'onde est colorée par locuteur, la liste des voix remplace les visages, et la sortie est un fichier audio par voix ou fusionné. <i>Illustratif : voix non encore mesurées.</i>"};
+function setS(s){win.dataset.s=s;document.querySelectorAll('#states button[data-s]').forEach(b=>b.classList.toggle('on',b.dataset.s===s));document.getElementById('leg').innerHTML=L[s];
+ document.getElementById('fname').textContent=s==='audio'?'Top 5 des répliques cultes de Dustin.m4a':'Top 5 des répliques cultes de Dustin.mp4';
+ document.getElementById('fn2').textContent=document.getElementById('fname').textContent;document.getElementById('fext').textContent=s==='audio'?'M4A':'MP4';
+ document.getElementById('fmeta').textContent=s==='audio'?'AAC 44,1 kHz · stéréo · 1:00.9 · 1 Mo':'1080×1920 · H.264 · 30 i/s · AAC · 1:00.9 · 13 Mo';document.getElementById('chipmode').textContent=s==='audio'?'Piste : voix':'Piste : visage + voix';lanes()}
+function setT(t){win.dataset.th=t;document.querySelectorAll('#states button[data-th]').forEach(b=>b.classList.toggle('on',b.dataset.th===t))}
+document.querySelectorAll('#states button').forEach(b=>b.onclick=()=>b.dataset.s?setS(b.dataset.s):setT(b.dataset.th));
+refresh();setS('liste');
+
+window.auditTrouver=function(){
+  const out=[];
+  win.querySelectorAll('.card,.tw').forEach(c=>{if(!c.offsetParent)return;const cr=c.getBoundingClientRect();
+    c.querySelectorAll('*').forEach(e=>{if(!e.offsetParent)return;const r=e.getBoundingClientRect();if(r.width===0)return;
+      const sc=e.closest('.scroll');if(sc){const sr=sc.getBoundingClientRect();if(r.bottom<sr.top||r.top>sr.bottom)return}
+      if(r.left<cr.left+1-0.5||r.right>cr.right-1+0.5)out.push(`déborde : ${e.className||e.tagName} « ${(e.textContent||'').trim().slice(0,30)} »`)})});
+  win.querySelectorAll('span,div,b').forEach(e=>{if(!e.offsetParent||e.children.length)return;const cs=getComputedStyle(e);if(e.scrollWidth>e.clientWidth+1&&cs.textOverflow!=='ellipsis'&&cs.overflow!=='visible')out.push(`tronqué : « ${e.textContent.trim().slice(0,30)} »`)});
+  return out;
+};
+</script>
+</body></html>

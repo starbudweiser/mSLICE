@@ -48,6 +48,10 @@ enum AgentJSON {
     func recognize(_ url: URL) async -> FaceIndex?
     /// Nom donné à un personnage d'un fichier ouvert dans l'appli ; faux si le fichier n'est pas ouvert (l'outil écrit alors le fichier des visages).
     func renameSubject(_ id: Int32, to name: String, of url: URL) -> Bool
+    /// Reconnaissance des voix d'un fichier ouvert dans l'appli (modèle optionnel installé). nil si elle échoue ou est annulée.
+    func recognizeVoices(_ url: URL) async -> VoiceIndex?
+    /// Nom donné à une voix, ou lien avec un personnage (`person` : -1 pour délier, nil pour ne pas toucher au lien) ; faux si le fichier n'est pas ouvert.
+    func editVoice(_ id: Int32, name: String?, person: Int32?, of url: URL) -> Bool
 }
 
 struct ToolDef {
@@ -89,17 +93,17 @@ enum Agent {
                 properties: [("path", "string", "Absolute path of the file"), ("noise_db", "number", "Silence threshold in dB. Default -40 (use -30 for noisy rooms)."), ("min_duration", "number", "Minimum silence length in seconds. Default 1.")], required: ["path"]),
         ToolDef(name: "get_frame", description: "Return the picture of the video at a given time (PNG), to look at the content before deciding where to cut.",
                 properties: [("path", "string", "Absolute path of the file"), ("time", "string", "Time in seconds or m:ss.d"), ("width", "number", "Width in pixels (default 640, max 1280)")], required: ["path", "time"]),
-        ToolDef(name: "analyze_media", description: "Analyze a video or audio file with the models built into macOS (nothing is downloaded, nothing leaves the Mac): detects the shots (cuts), the kinds of scenes (fire, crowd, night, vehicles, people, animals, food, sports...) and the sounds (speech, music, laughter, gunfire, explosions, sirens...). Takes about 1 s per minute of video; the result is saved and reused. Returns the shot count and the scene and sound families found, each with an identifier (\"scene:fire\", \"sound:laugh\") for find_scenes, its total duration and its number of passages. It does not recognise individual people by itself: with characters=true it also recognises the characters (faces, grouped by person) if the user installed the optional characters model in mSLICE's Find tab (the agent never downloads anything: without the model, characters.status is \"model_not_installed\"). Recognition takes about 1 s per minute of video and is saved with the file.",
+        ToolDef(name: "analyze_media", description: "Analyze a video or audio file with the models built into macOS (nothing is downloaded, nothing leaves the Mac): detects the shots (cuts), the kinds of scenes (fire, crowd, night, vehicles, people, animals, food, sports...) and the sounds (speech, music, laughter, gunfire, explosions, sirens...). Takes about 1 s per minute of video; the result is saved and reused. Returns the shot count and the scene and sound families found, each with an identifier (\"scene:fire\", \"sound:laugh\") for find_scenes, its total duration and its number of passages. It does not recognise individual people by itself: with characters=true it also recognises the characters (faces, grouped by person) if the user installed the optional characters model in mSLICE's Find tab (the agent never downloads anything: without the model, characters.status is \"model_not_installed\"). Recognition takes about 1 s per minute of video and is saved with the file. With voices=true it also recognises the voices (speaker embeddings, grouped by speaker) if the user installed the second optional model (voices.status is \"model_not_installed\" otherwise); each voice is linked to the character whose face is alone on screen while it speaks. Works on audio-only files too.",
                 properties: [("path", "string", "Absolute path of the file"), ("force", "boolean", "Analyze again even if a saved result exists (default false). Character recognition is never redone by this flag: it would lose the names given to the characters."), ("all", "boolean", "List every family found instead of the 25 longest of each kind (default false)"),
-                             ("characters", "boolean", "Also recognise the characters (faces) with the optional model, then list them (default false)")], required: ["path"]),
-        ToolDef(name: "find_scenes", description: "Find the passages of a file that match scene and sound criteria, and optionally turn them into pieces. `include`: every criterion must hold at the same time (AND). `exclude`: passages that overlap any of these are dropped (they are still listed, marked excluded_by). Criteria: \"scene:<family>\" or \"sound:<family>\" (identifiers from analyze_media, e.g. scene:fire, scene:night, sound:laugh, sound:gunfire, sound:explosion, sound:music), \"label:<name>\" (raw macOS image label, e.g. label:fireworks) or \"sound_label:<name>\" (raw sound label, e.g. sound_label:gunshot_gunfire), or \"person:<id or name>\" (a character from list_subjects, e.g. person:0 or person:House; needs the recognised characters). Passages are smoothed (gaps under 1.5 s filled, under 1 s dropped) and, with whole_shots=true, widened to whole shots. apply=\"none\" (default) only lists them; \"add\" adds the kept passages to the existing pieces; \"set\" replaces the pieces. Analyzes the file first if needed.",
+                             ("characters", "boolean", "Also recognise the characters (faces) with the optional model, then list them (default false)"), ("voices", "boolean", "Also recognise the voices with the second optional model, then list them (default false)")], required: ["path"]),
+        ToolDef(name: "find_scenes", description: "Find the passages of a file that match scene and sound criteria, and optionally turn them into pieces. `include`: every criterion must hold at the same time (AND). `exclude`: passages that overlap any of these are dropped (they are still listed, marked excluded_by). Criteria: \"scene:<family>\" or \"sound:<family>\" (identifiers from analyze_media, e.g. scene:fire, scene:night, sound:laugh, sound:gunfire, sound:explosion, sound:music), \"label:<name>\" (raw macOS image label, e.g. label:fireworks) or \"sound_label:<name>\" (raw sound label, e.g. sound_label:gunshot_gunfire), or \"person:<id or name>\" (a character from list_subjects whose face is on screen, e.g. person:0 or person:House; needs the recognised characters), \"alone:<id or name>\" (that character is the only face on screen), \"speaks:<id or name>\" (the voice linked to that character is heard, even off screen) or \"voice:<id or name>\" (a voice from list_subjects, e.g. voice:2; works on audio-only files). Passages are smoothed (gaps under 1.5 s filled, under 1 s dropped) and, with whole_shots=true, widened to whole shots. apply=\"none\" (default) only lists them; \"add\" adds the kept passages to the existing pieces; \"set\" replaces the pieces. Analyzes the file first if needed.",
                 properties: [("path", "string", "Absolute path of the file"), ("include", "array", "Criteria that must all hold, e.g. [\"scene:night\", \"sound:gunfire\"]"), ("exclude", "array", "Criteria that discard a passage, e.g. [\"sound:music\"]"),
                              ("whole_shots", "boolean", "Widen each passage to the whole shots it touches (default true); false adds a 0.3 s margin instead"), ("apply", "string", "none (default), add or set"),
                              ("min_scene_score", "number", "Minimum image-label confidence 0.05-0.95 (default 0.35)"), ("min_sound_score", "number", "Minimum sound confidence 0.05-0.95 (default 0.5)"), ("min_length", "number", "Shortest passage kept, in seconds (default 1)")], required: ["path", "include"]),
-        ToolDef(name: "list_subjects", description: "List the characters recognised in a file (by their faces, grouped by person), the most present first: id (\"person:0\"), name (given by name_subject, else \"Character N\"), whether it was named, total seconds on screen, number of appearances, first and last time seen. Needs the characters to have been recognised: analyze_media with characters=true (optional model installed by the user).",
+        ToolDef(name: "list_subjects", description: "List the voices and characters recognised in a file. Voices (grouped by speaker, id \"voice:0\", with the linked character when there is one) need analyze_media with voices=true. Characters (by their faces, grouped by person), the most present first: id (\"person:0\"), name (given by name_subject, else \"Character N\"), whether it was named, total seconds on screen, number of appearances, first and last time seen. Needs the characters to have been recognised: analyze_media with characters=true (optional model installed by the user).",
                 properties: [("path", "string", "Absolute path of the file")], required: ["path"]),
-        ToolDef(name: "name_subject", description: "Give a name to a recognised character (stored with the file's analysis, shown in mSLICE's Find tab, usable in find_scenes as person:<name>). An empty name makes the character anonymous again. Names are limited to 40 characters.",
-                properties: [("path", "string", "Absolute path of the file"), ("subject", "string", "The character: \"person:0\", \"0\" or its current name"), ("name", "string", "The new name (empty to clear)")], required: ["path", "subject", "name"]),
+        ToolDef(name: "name_subject", description: "Give a name to a recognised character or voice (stored with the file's analysis, shown in mSLICE's Find tab, usable in find_scenes as person:<name> / voice:<name>). An empty name makes it anonymous again. Names are limited to 40 characters. For a voice (subject \"voice:2\"), link_to_person links it to a character (\"person:0\", \"0\" or its name) so that speaks:<character> finds it; an empty link_to_person unlinks it.",
+                properties: [("path", "string", "Absolute path of the file"), ("subject", "string", "The character (\"person:0\", \"0\" or its current name) or the voice (\"voice:2\")"), ("name", "string", "The new name (empty to clear)"), ("link_to_person", "string", "Voices only: the character this voice belongs to (empty to unlink)")], required: ["path", "subject", "name"]),
         ToolDef(name: "get_segments", description: "The pieces (segments) marked to keep in a file, in order, numbered from 1. Read live from mSLICE if the file is open, else from the saved session.",
                 properties: [("path", "string", "Absolute path of the file")], required: ["path"]),
         ToolDef(name: "set_segments", description: "Replace all the pieces of a file. Pieces are clamped to the file, sorted, and overlapping ones are merged. If mSLICE has the file open, the timeline updates live.",
@@ -387,12 +391,14 @@ enum Agent {
             let i = try await info(try fileURL(a))
             let (index, fresh) = try await analysis(i, force: bool(a["force"]) ?? false, host: host)
             let chars: [String: Any]? = (bool(a["characters"]) ?? false) ? await recognizeCharacters(i, host: host) : nil
-            return analysisSummary(index, i, fresh: fresh, all: bool(a["all"]) ?? false, characters: chars)
+            let voices: [String: Any]? = (bool(a["voices"]) ?? false) ? await recognizeVoiceTool(i, host: host) : nil
+            return analysisSummary(index, i, fresh: fresh, all: bool(a["all"]) ?? false, characters: chars, voices: voices)
 
         case "list_subjects":
             let i = try await info(try fileURL(a))
-            guard let f = FaceStore.load(i) else { throw AgentError(noFaces) }
-            return listSubjects(f, i)
+            let f = FaceStore.load(i), v = VoiceStore.load(i)
+            guard f != nil || v != nil else { throw AgentError(noFaces) }
+            return listSubjects(f, v, i)
 
         case "name_subject":
             return try await nameSubject(a, host: host)
@@ -443,6 +449,9 @@ enum Agent {
         case .scene: return SceneFamilies.byID[t.key]?.names[1] ?? t.key
         case .sound: return SoundFamilies.byID[t.key]?.names[1] ?? t.key
         case .person: return t.label ?? "Character \((Int(t.key) ?? 0) + 1)"
+        case .voice: return t.label ?? "Voice \((Int(t.key) ?? 0) + 1)"
+        case .speaks: return "\(t.label ?? "Character \((Int(t.key) ?? 0) + 1)") speaks"
+        case .alone: return "\(t.label ?? "Character \((Int(t.key) ?? 0) + 1)") alone on screen"
         default: return t.key
         }
     }
@@ -458,12 +467,61 @@ enum Agent {
         }
     }
 
-    static func listSubjects(_ f: FaceIndex, _ i: MediaInfo) -> ToolOutput {
-        let rows = subjectRows(f, limit: 50)
-        var o: [String: Any] = ["file": i.url.path, "duration": r1(i.duration), "count": f.characters().count, "subjects": rows,
-                                "hint": "Use find_scenes with include [\"person:<id or name>\"]; name_subject gives a character a name."]
-        if f.characters().count > rows.count { o["note"] = "Only the 50 most present characters are listed." }
+    static func listSubjects(_ f: FaceIndex?, _ v: VoiceIndex?, _ i: MediaInfo) -> ToolOutput {
+        var o: [String: Any] = ["file": i.url.path, "duration": r1(i.duration),
+                                "hint": "Use find_scenes with include [\"person:<id or name>\"] (on screen), [\"alone:<…>\"], [\"speaks:<character>\"] or [\"voice:<id or name>\"]; name_subject gives a name."]
+        if let f {
+            let rows = subjectRows(f, limit: 50)
+            o["count"] = f.characters().count; o["subjects"] = rows
+            if f.characters().count > rows.count { o["note"] = "Only the 50 most present characters are listed." }
+        }
+        if let v {
+            o["voices"] = v.voices().prefix(50).map { s -> [String: Any] in
+                var d: [String: Any] = ["id": "voice:\(s.id)", "name": v.names[s.id] ?? "Voice \(s.id + 1)", "named": v.names[s.id] != nil, "seconds": r1(s.seconds), "turns": s.turns, "sample_start": r1(s.sample)]
+                if let p = v.link[s.id] { d["linked_character"] = "person:\(p)"; if let n = f?.names[p] { d["linked_character_name"] = n } }
+                return d
+            }
+        }
         return .json(o)
+    }
+
+    /// Reconnaissance des voix pour `analyze_media` : jamais de téléchargement ; sans modèle, le dit clairement.
+    private static func recognizeVoiceTool(_ i: MediaInfo, host: AgentHost?) async -> [String: Any] {
+        if i.audio == nil { return ["status": "no_audio"] }
+        var fresh = false
+        var v = VoiceStore.load(i)
+        if v == nil {
+            guard ModelFiles.isInstalled(ModelCatalog.voices) else {
+                return ["status": "model_not_installed", "hint": "Ask the user to install the optional voices model in mSLICE's Find tab (Voices card). The agent cannot download it."]
+            }
+            if let host, host.segments(of: i.url) != nil { v = await host.recognizeVoices(i.url) }
+            if v == nil { v = await AnalysisRunner.runVoices(i, job: AnalysisJob(), progress: { _ in }) }
+            fresh = true
+        }
+        guard let v else { return ["status": "failed", "hint": "Voice recognition failed or was cancelled (is the model intact? the user can remove and download it again in the Find tab)."] }
+        return ["status": "ok", "analyzed_now": fresh, "recognition_seconds": r1(v.seconds), "count": v.voices().count,
+                "voices": v.voices().prefix(12).map { s -> [String: Any] in
+                    var d: [String: Any] = ["id": "voice:\(s.id)", "name": v.names[s.id] ?? "Voice \(s.id + 1)", "seconds": r1(s.seconds), "turns": s.turns]
+                    if let p = v.link[s.id] { d["linked_character"] = "person:\(p)" }
+                    return d },
+                "hint": "list_subjects gives all of them; find_scenes accepts voice:<id or name>, and speaks:<character> for a voice linked to a character."]
+    }
+
+    /// « voice:2 », « 2 » ou le nom d'une voix → critère de recherche.
+    static func resolveVoice(_ spec: String, voices: VoiceIndex?, exclude: Bool) throws -> FindTerm {
+        guard let v = voices else { throw AgentError("No voices recognised in this file yet: call analyze_media with voices=true (needs the optional voices model, installed by the user from mSLICE's Find tab; the agent cannot download it).") }
+        var s = spec.trimmingCharacters(in: .whitespaces)
+        if s.lowercased().hasPrefix("voice:") { s = String(s.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
+        let list = v.voices()
+        var id: Int32?
+        if let n = Int32(s) { id = list.contains { $0.id == n } ? n : nil }
+        else if !s.isEmpty, s.count <= 80 {
+            let m = list.filter { v.names[$0.id]?.lowercased() == s.lowercased() }
+            if m.count > 1 { throw AgentError("Ambiguous voice name \"\(s.prefix(40))\": \(m.map { "voice:\($0.id)" }.joined(separator: ", ")). Use the id.") }
+            id = m.first?.id
+        }
+        guard let id else { throw AgentError("Unknown voice \"\(s.prefix(40))\". Known: \(list.prefix(12).map { "voice:\($0.id)" + (v.names[$0.id].map { " (\($0.prefix(40)))" } ?? "") }.joined(separator: ", ")). Use list_subjects.") }
+        return FindTerm(kind: .voice, key: String(id), exclude: exclude, label: v.names[id])
     }
 
     /// Reconnaissance des personnages pour `analyze_media` : jamais de téléchargement ; sans modèle, le dit clairement.
@@ -502,8 +560,30 @@ enum Agent {
         return FindTerm(kind: .person, key: String(id), exclude: exclude, label: f.names[id])
     }
 
+    private static func nameVoice(_ a: [String: Any], _ i: MediaInfo, host: AgentHost?) throws -> ToolOutput {
+        guard var v = VoiceStore.load(i) else { throw AgentError("No voices recognised in this file yet: call analyze_media with voices=true.") }
+        let t = try resolveVoice(a["subject"] as? String ?? "", voices: v, exclude: false)
+        let id = Int32(t.key) ?? 0
+        guard let raw = a["name"] as? String, raw.count <= 500 else { throw AgentError("name is required (use an empty string to clear it) and must be shorter than 500 characters.") }
+        var person: Int32?
+        if let l = a["link_to_person"] as? String {
+            if l.trimmingCharacters(in: .whitespaces).isEmpty { person = -1 }
+            else { person = Int32(try resolvePerson(l, faces: FaceStore.load(i), exclude: false).key) }
+        }
+        var next = v; next.rename(id, to: raw)
+        if let person { if person >= 0 { for (k, p) in next.link where p == person && k != id { next.link[k] = nil } }; next.setLink(id, to: person >= 0 ? person : nil) }
+        var live = false
+        if let host, host.editVoice(id, name: raw, person: person, of: i.url) { live = true }
+        else { v = next; guard VoiceStore.save(v, for: i) else { throw AgentError("The name could not be saved.") } }
+        let name = next.names[id]
+        var o: [String: Any] = ["file": i.url.path, "id": "voice:\(id)", "name": name ?? "Voice \(id + 1)", "named": name != nil, "live_in_app": live]
+        if let p = next.link[id] { o["linked_character"] = "person:\(p)" }
+        return .json(o)
+    }
+
     private static func nameSubject(_ a: [String: Any], host: AgentHost?) async throws -> ToolOutput {
         let i = try await info(try fileURL(a))
+        if let sub = a["subject"] as? String, sub.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("voice:") { return try nameVoice(a, i, host: host) }
         guard var f = FaceStore.load(i) else { throw AgentError(noFaces) }
         guard let subject = a["subject"] as? String, !subject.isEmpty else { throw AgentError("subject is required: \"person:0\", \"0\" or the character's name.") }
         guard let raw = a["name"] as? String, raw.count <= 500 else { throw AgentError("name is required (use an empty string to clear it) and must be shorter than 500 characters.") }
@@ -517,7 +597,7 @@ enum Agent {
         return .json(["file": i.url.path, "id": "person:\(id)", "name": name ?? "Character \(id + 1)", "named": name != nil, "live_in_app": live])
     }
 
-    static func analysisSummary(_ index: AnalysisIndex, _ i: MediaInfo, fresh: Bool, all: Bool, characters: [String: Any]? = nil) -> ToolOutput {
+    static func analysisSummary(_ index: AnalysisIndex, _ i: MediaInfo, fresh: Bool, all: Bool, characters: [String: Any]? = nil, voices: [String: Any]? = nil) -> ToolOutput {
         let s = Finder(index).summary()
         func rows(_ r: [SummaryRow]) -> [[String: Any]] { (all ? r : Array(r.prefix(25))).map { ["id": $0.term.token, "name": englishName($0.term), "seconds": r1($0.seconds), "passages": $0.count] } }
         var o: [String: Any] = ["file": i.url.path, "duration": r1(i.duration), "analyzed_now": fresh, "analysis_seconds": r1(index.seconds), "has_video": index.hasVideo, "has_audio": index.hasAudio,
@@ -525,18 +605,30 @@ enum Agent {
                                 "hint": "Use find_scenes with include / exclude criteria such as \"scene:fire\" or \"sound:laugh\"; label:<name> and sound_label:<name> reach the raw macOS labels."]
         if index.hasVideo { o["shots"] = index.shotCount }
         if let characters { o["characters"] = characters }
+        if let voices { o["voices"] = voices }
         if !all, s.scenes.count > 25 || s.sounds.count > 25 { o["note"] = "Only the 25 longest of each kind are listed; pass all=true for the rest." }
         return .json(o)
     }
 
     private static func findScenes(_ a: [String: Any], host: AgentHost?) async throws -> ToolOutput {
         let i = try await info(try fileURL(a))
-        let faces = FaceStore.load(i)
+        let faces = FaceStore.load(i), voices = VoiceStore.load(i)
         func terms(_ key: String, exclude: Bool) throws -> [FindTerm] {
             guard let list = a[key] as? [Any] else { return [] }
             return try list.map { any in
-                if let s = any as? String, s.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("person:") { return try resolvePerson(s, faces: faces, exclude: exclude) }
-                guard let s = any as? String, let t = FindTerm.parse(s.trimmingCharacters(in: .whitespaces), exclude: exclude) else { throw AgentError("Bad criterion \"\("\(any)".prefix(60))\": use scene:<family>, sound:<family>, label:<name>, sound_label:<name> or person:<id or name>.") }
+                if let s = any as? String {
+                    let low = s.trimmingCharacters(in: .whitespaces).lowercased()
+                    if low.hasPrefix("person:") { return try resolvePerson(s, faces: faces, exclude: exclude) }
+                    if low.hasPrefix("alone:") || low.hasPrefix("speaks:") {
+                        let alone = low.hasPrefix("alone:")
+                        var t = try resolvePerson(String(s.trimmingCharacters(in: .whitespaces).dropFirst(alone ? 6 : 7)), faces: faces, exclude: exclude)
+                        t.kind = alone ? .alone : .speaks
+                        if !alone, !(voices?.link.values.contains(Int32(t.key) ?? -1) ?? false) { throw AgentError("No voice is linked to \(t.token.replacingOccurrences(of: "speaks:", with: "person:")): recognise the voices (analyze_media voices=true) and, if needed, link one with name_subject (subject \"voice:N\", link_to_person).") }
+                        return t
+                    }
+                    if low.hasPrefix("voice:") { return try resolveVoice(s, voices: voices, exclude: exclude) }
+                }
+                guard let s = any as? String, let t = FindTerm.parse(s.trimmingCharacters(in: .whitespaces), exclude: exclude) else { throw AgentError("Bad criterion \"\("\(any)".prefix(60))\": use scene:<family>, sound:<family>, label:<name>, sound_label:<name>, person:/alone:/speaks:<id or name> or voice:<id or name>.") }
                 if t.kind == .scene, SceneFamilies.byID[t.key] == nil { throw AgentError("Unknown scene family \"\(t.key.prefix(40))\". Known: \(SceneFamilies.all.map(\.id).joined(separator: ", ")).") }
                 if t.kind == .sound, SoundFamilies.byID[t.key] == nil { throw AgentError("Unknown sound family \"\(t.key.prefix(40))\". Known: \(SoundFamilies.all.map(\.id).joined(separator: ", ")).") }
                 return t
@@ -552,11 +644,11 @@ enum Agent {
         if let v = number(a["min_sound_score"]) { q.soundMin = min(max(v, 0.05), 0.95) }
         if let v = number(a["min_length"]) { q.minLength = min(max(v, 0.5), 30) }
         let (index, fresh) = try await analysis(i, force: false, host: host)
-        let finder = Finder(index, faces: faces)
+        let finder = Finder(index, faces: faces, voices: voices)
         var notes: [String] = []
         for t in inc + exc {
-            if (t.kind == .scene || t.kind == .sceneLabel || t.kind == .person) && !index.hasVideo { throw AgentError("This file has no video: image criteria (\(t.token)) cannot match. Use sound criteria.") }
-            if (t.isSound) && !index.hasAudio { throw AgentError("This file has no audio: sound criteria (\(t.token)) cannot match.") }
+            if t.needsVideo && !index.hasVideo { throw AgentError("This file has no video: image criteria (\(t.token)) cannot match. Use sound criteria.") }
+            if (t.isSound || t.kind == .voice || t.kind == .speaks) && !index.hasAudio { throw AgentError("This file has no audio: sound criteria (\(t.token)) cannot match.") }
             if !finder.knows(t) { notes.append("\(t.token) never appears in this file.") }
         }
         let r = finder.run(q)

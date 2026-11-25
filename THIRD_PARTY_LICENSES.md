@@ -31,3 +31,14 @@ To recognise characters, mSLICE can download — **only if the user agrees** (Fi
 - Fichier hébergé (licence, notice et empreinte SHA-256 comprises) : https://github.com/starbudweiser/mSLICE-models (release `characters-auraface-1`).
 - Changes (Apache 2.0, section 4 b): ONNX → Core ML conversion (float16), pixel normalisation built into the model, weights palettised to 8 bits (k-means). No retraining.
 - « AuraFace » et « fal.ai » appartiennent à leurs titulaires ; mSLICE n'est ni approuvé ni affilié à fal.ai. / "AuraFace" and "fal.ai" belong to their owners; mSLICE is neither endorsed by nor affiliated with fal.ai.
+
+To recognise voices, mSLICE can download — **only if the user agrees** (Find tab) — a second, optional model. It is installed in `Application Support/mSLICE/models/voices` together with its licence and notice, and can be removed at any time.
+
+| Composant | Licence | Source |
+| --- | --- | --- |
+| CAM++ (`iic/speech_campplus_sv_en_voxceleb_16k`), 3D-Speaker, Alibaba / ModelScope | Apache License 2.0 | https://github.com/modelscope/3D-Speaker |
+
+- Modifications (Apache 2.0, section 4 b) : conversion PyTorch → Core ML (flottants 32 bits, entrée fixe de 150 trames × 80 caractéristiques), couche de moyennes par segments réécrite en opération équivalente pour la longueur fixe, remise en forme d'un tenseur remplacée par une opération équivalente. Aucun réentraînement ; sortie vérifiée contre les poids d'origine (cosinus ≥ 0,9999998). Script : `scripts/model_trials/convert_campplus.py`.
+- Changes (Apache 2.0, section 4 b): PyTorch → Core ML conversion (float32, fixed input of 150 frames × 80 features), segment-pooling layer rewritten as an equivalent operation for the fixed length, one tensor reshape replaced by an equivalent one. No retraining; output verified against the original weights (cosine ≥ 0.9999998).
+- Fichier hébergé : https://github.com/starbudweiser/mSLICE-models (release `voices-campplus-1`, à publier avec l'accord du propriétaire). Le modèle d'origine a été entraîné sur VoxCeleb (jeu de données de recherche) : voir la fiche du modèle d'origine.
+- « CAM++ », « 3D-Speaker » et « Alibaba » appartiennent à leurs titulaires ; mSLICE n'est ni approuvé ni affilié. / These names belong to their owners; mSLICE is neither endorsed by nor affiliated with them.

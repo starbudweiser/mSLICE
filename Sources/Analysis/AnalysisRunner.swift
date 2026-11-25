@@ -36,6 +36,13 @@ enum AnalysisRunner {
         return FaceStore.load(info)
     }
 
+    /// Reconnaissance des voix (modèle optionnel installé) : même principe, dans `mslice-mcp --voices`.
+    static func runVoices(_ info: MediaInfo, job: AnalysisJob, progress: @escaping @Sendable (AnalysisProgress) -> Void) async -> VoiceIndex? {
+        guard let helper = helper() else { return await VoiceAnalyzer.run(info, job: job, progress: progress) }
+        guard await spawn(helper, ["--voices", info.url.path], base: AnalysisProgress(hasVideo: true, hasAudio: false), job: job, progress: progress) else { return nil }
+        return VoiceStore.load(info)
+    }
+
     /// Lance le processus d'analyse, relaie sa progression, transmet l'annulation et la pause ; vrai s'il a terminé normalement.
     private static func spawn(_ helper: URL, _ arguments: [String], base: AnalysisProgress, job: AnalysisJob, progress: @escaping @Sendable (AnalysisProgress) -> Void) async -> Bool {
         await AnalysisSlot.shared.acquire()
@@ -97,7 +104,7 @@ enum AnalysisRunner {
 
 /// Côté processus d'analyse (`mslice-mcp --analyze <fichier>`) : progression en JSON sur la sortie standard, ordres sur l'entrée standard.
 enum AnalysisChild {
-    static func main(path: String, faces: Bool = false) -> Never {
+    static func main(path: String, faces: Bool = false, voices: Bool = false) -> Never {
         setvbuf(stdout, nil, _IOLBF, 0)
         func say(_ o: [String: Any]) {
             guard JSONSerialization.isValidJSONObject(o), let d = try? JSONSerialization.data(withJSONObject: o), let s = String(data: d, encoding: .utf8) else { return }
@@ -115,7 +122,9 @@ enum AnalysisChild {
             let report: @Sendable (AnalysisProgress) -> Void = { p in
                 say(["i": p.images, "s": p.sounds, "t": p.imagesTime, "ss": p.soundsSeconds, "p": p.paused, "mb": p.memoryMB])
             }
-            let seconds: Double? = faces
+            let seconds: Double? = voices
+                ? await VoiceAnalyzer.run(info, job: job, slot: false, progress: report)?.seconds
+                : faces
                 ? await FaceAnalyzer.run(info, job: job, slot: false, progress: report)?.seconds
                 : await Analyzer.run(info, job: job, slot: false, progress: report)?.seconds
             if let seconds { say(["done": true, "seconds": seconds]); exit(0) }

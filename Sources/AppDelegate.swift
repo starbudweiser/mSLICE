@@ -260,6 +260,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Task { @MainActor in
                         _ = await d.find.analyzeAndWait(force: false)
                         if self.arg("--recognize") != nil { _ = await d.find.recognizeAndWait() }       // personnages : le modèle doit être installé
+                        if self.arg("--voices") != nil { _ = await d.find.recognizeVoicesAndWait() }      // voix : le modèle doit être installé
+                        if let ids = self.arg("--proto") {                                               // protagonistes choisis, ex. « p0,p1 » ; --mode visible|speaks|alone ; --out each|merged
+                            for id in ids.split(separator: ",") { d.find.toggleProto(String(id)) }
+                            if let m = self.arg("--mode").flatMap(ProtoMode.init(rawValue:)) { d.find.protoMode = m }
+                            if self.arg("--out") == "merged" { d.find.protoOut = .merged }
+                        }
                         if st == "find-choice" || st == "find-added" {
                             let spec = self.arg("--find") ?? "scene:clothing"       // ex. « scene:clothing,!sound:music » (! : SAUF)
                             for part in spec.split(separator: ",") { if let t = FindTerm.parse(String(part.drop { $0 == "!" }), exclude: part.hasPrefix("!")) { d.find.add(t) } }

@@ -228,6 +228,25 @@ final class AppModel: ObservableObject {
         if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
         if !o.passthrough, o.format == .same { o.format = d.info.isAudioOnly ? .m4a : .mp4 }
         let outs = Planner.outputs(info: d.info, segments: d.segments, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: d.mergeName)
+        startExport(d, outs, o)
+    }
+
+    /// Exporte directement des groupes de moments choisis dans l'onglet Trouver (un fichier par groupe, chacun fusionné), sans toucher aux morceaux du fichier.
+    func exportGroups(_ groups: [(name: String, segments: [(start: Double, end: Double)])]) {
+        guard let d = current, sheet == .none, groups.contains(where: { !$0.segments.isEmpty }) else { return }
+        var o = opts; o.merge = true
+        if o.passthrough, !Planner.canCopy(info: d.info, to: o.format) { flash(L.t("err.cantcopy")); return }
+        if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
+        if !o.passthrough, o.format == .same { o.format = d.info.isAudioOnly ? .m4a : .mp4 }
+        let base = Planner.sanitize(d.baseName.isEmpty ? d.info.url.deletingPathExtension().lastPathComponent : d.baseName)
+        var outs: [OutputItem] = []
+        for g in groups where !g.segments.isEmpty {
+            outs += Planner.outputs(info: d.info, segments: g.segments.map { Segment(start: $0.start, end: $0.end) }, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: "\(base) – \(g.name)")
+        }
+        startExport(d, outs, o)
+    }
+
+    private func startExport(_ d: Doc, _ outs: [OutputItem], _ o: ExportOptions) {
         let r = ExportRun(); run = r; sheet = .export
         player.pause()
         r.start(info: d.info, outputs: outs, opts: o, keyframes: d.keyframes) { [weak self, weak d] in

@@ -369,6 +369,87 @@ with zipfile.ZipFile(d + '/ok.zip', 'w') as z: z.writestr('a.txt', 'x')
             } else { check(false, "index des visages : sérialisation") }
         }
 
+        // 12. voix : index, regroupement, liens avec les visages, critères « parle » / « seul » (données synthétiques à vérité connue)
+        do {
+            struct Rng: RandomNumberGenerator { var s: UInt64; mutating func next() -> UInt64 { s &+= 0x9E3779B97F4A7C15; var z = s; z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9; z = (z ^ (z >> 27)) &* 0x94D049BB133111EB; return z ^ (z >> 31) } }
+            var rng = Rng(s: 7)
+            func gauss() -> Float { let u1 = Float.random(in: 1e-6 ..< 1, using: &rng), u2 = Float.random(in: 0 ..< 1, using: &rng); return (-2 * logf(u1)).squareRoot() * cosf(2 * .pi * u2) }
+            func unit(_ v: [Float]) -> [Float] { let n = v.reduce(0) { $0 + $1 * $1 }.squareRoot(); return v.map { $0 / n } }
+            func noise() -> [Float] { unit((0 ..< VoiceIndex.dim).map { _ in gauss() }) }
+            let centers = (0 ..< 3).map { _ in noise() }
+            // 3 voix : A parle 0-12 et 40-48, B 14-26 et 50-58, C 28-38 ; 20 s de silence en 60-80 ; une fenêtre isolée (D) à 85
+            let speech: [(ClosedRange<Double>, Int)] = [(0 ... 12, 0), (14 ... 26, 1), (28 ... 38, 2), (40 ... 48, 0), (50 ... 58, 1)]
+            var v = VoiceIndex(duration: 90)
+            v.modelSHA = ModelCatalog.voices.sha256 ?? ""
+            var truth: [Int] = []
+            for (range, who) in speech {
+                var t = range.lowerBound
+                while t <= range.upperBound - VoiceIndex.window + 1e-6 {
+                    let e = FaceIndex.quantize(unit(zip(centers[who], noise()).map { $0 + 0.6 * $1 }))
+                    v.t.append(Float(t)); v.emb += e.q; v.embScale.append(e.scale); truth.append(who); t += VoiceIndex.hop
+                }
+            }
+            let lone = FaceIndex.quantize(noise()); v.t.append(85); v.emb += lone.q; v.embScale.append(lone.scale); truth.append(3)
+            v.group = VoiceClustering.cluster(v); v.nextGroup = (v.group.max() ?? -1) + 1
+            let groups = Dictionary(grouping: (0 ..< v.count).filter { v.group[$0] >= 0 }, by: { v.group[$0] })
+            let pure = groups.values.allSatisfy { Set($0.map { truth[$0] }).count == 1 }
+            check(groups.count == 3 && pure, "voix : 3 voix, chacune d'une seule personne, prises de parole séparées par des silences réunies (\(groups.count) groupes, purs : \(pure))")
+            check(v.group.last == -1, "voix : une fenêtre isolée n'est pas une voix")
+            let st = v.voices()
+            check(st.count == 3 && st.allSatisfy { $0.turns == 2 || $0.turns == 1 } && Set(st.map(\.id)).count == 3, "voix : liste du plus long au plus court \(st.map { "\($0.id):\(f1($0.seconds)) s/\($0.turns)" })")
+            let a = v.group[0]
+            let ivA = v.intervals(of: a)
+            check(ivA.count == 2 && abs(ivA[0].start) < 1 && ivA[0].end > 10 && ivA[0].end < 13.5 && ivA[1].start > 39 && ivA[1].end < 49.5, "voix : plages de la voix A \(ivA.map { "\(f1($0.start))-\(f1($0.end))" })")
+            // sérialisation : aller-retour, fichier trafiqué refusé
+            var named = v; named.rename(a, to: "Alice"); named.link[a] = 5
+            if let d = named.serialized(), let back = VoiceIndex(serialized: d) {
+                check(back.group == named.group && back.t == named.t && back.names[a] == "Alice" && back.link[a] == 5 && back.emb == named.emb, "voix : enregistrement et relecture identiques (\(d.count / 1024) Ko)")
+                var bad = named; bad.group[0] = 99
+                check(bad.serialized().flatMap(VoiceIndex.init(serialized:)) == nil, "voix : groupe hors plage refusé à la relecture")
+                var bad2 = named; bad2.t[1] = bad2.t[0] - 5
+                check(bad2.serialized().flatMap(VoiceIndex.init(serialized:)) == nil, "voix : instants non triés refusés à la relecture")
+            } else { check(false, "voix : sérialisation") }
+            check(VoiceIndex(serialized: Data("not a plist".utf8)) == nil, "voix : fichier illisible refusé")
+            var m = v; let b = m.group[truth.firstIndex(of: 1)!]
+            m.link[b] = 1; m.merge(b, into: a)
+            check(m.voices().count == 2 && m.link[a] == 1 && m.link[b] == nil, "voix : réunir deux voix garde le lien et vide l'autre")
+
+            // liens voix ↔ visages : A est seul à l'écran (personnage 0) pendant qu'elle parle ; B parle hors champ puis apparaît (personnage 1) en groupe
+            var f = FaceIndex(duration: 90); f.step = 1
+            func face(_ t: Double, _ g: Int32) { let q = FaceIndex.quantize(noise()); f.t.append(Float(t)); f.box += [0.2, 0.2, 0.2, 0.3]; f.px.append(120); f.track.append(Int32(f.t.count)); f.group.append(g); f.emb += q.q; f.embScale.append(q.scale) }
+            for s in stride(from: 1.0, to: 12.0, by: 1.0) { face(s, 0) }                               // le personnage 0 seul pendant la voix A
+            for s in stride(from: 41.0, to: 48.0, by: 1.0) { face(s, 0) }
+            for s in stride(from: 30.0, to: 38.0, by: 1.0) { face(s, 1); face(s, 0) }                  // pendant la voix C : deux personnages à l'écran
+            f.nextGroup = 2
+            let links = VoiceLinking.link(v, faces: f)
+            check(links[a] == 0 && links.count == 1, "liens : la voix A est liée au personnage 0 ; une voix hors champ ou en groupe n'est liée à personne \(links)")
+
+            // le Finder : voice:, speaks:, alone:
+            var base = AnalysisIndex(duration: 90); base.hasVideo = true; base.hasAudio = true
+            base.sceneOffsets = [0] + [Int32](repeating: 0, count: 180)
+            var vl = v; vl.link = links
+            let fnd = Finder(base, faces: f, voices: vl)
+            var q = FindQuery(terms: [FindTerm(kind: .voice, key: String(a))]); q.wholeShots = false
+            let rv = fnd.run(q)
+            check(rv.passages.count == 2 && abs(rv.keptSeconds - 20) < 4, "recherche : voice:A → 2 passages, \(f1(rv.keptSeconds)) s")
+            q = FindQuery(terms: [FindTerm(kind: .speaks, key: "0")]); q.wholeShots = false
+            check(fnd.run(q).passages.count == 2 && fnd.knows(FindTerm(kind: .speaks, key: "0")) && !fnd.knows(FindTerm(kind: .speaks, key: "1")), "recherche : speaks:0 = la voix liée au personnage 0 ; speaks:1 inconnu (aucune voix liée)")
+            q = FindQuery(terms: [FindTerm(kind: .alone, key: "0")]); q.wholeShots = false
+            let ra = fnd.run(q)
+            q = FindQuery(terms: [FindTerm(kind: .person, key: "0")]); q.wholeShots = false
+            let rp = fnd.run(q)
+            check(ra.keptSeconds < rp.keptSeconds - 5 && ra.passages.count == 2, "recherche : alone:0 exclut les moments où un autre personnage est à l'écran (\(f1(ra.keptSeconds)) s au lieu de \(f1(rp.keptSeconds)) s)")
+            check(FindTerm.parse("voice:3")?.kind == .voice && FindTerm.parse("alone:2")?.kind == .alone && FindTerm.parse("speaks:x") == nil && FindTerm.parse("voice:-1") == nil, "critères : voice:, alone:, speaks: reconnus, valeurs fausses refusées")
+            let vc = ModelCatalog.voices
+            check(vc.available && vc.kind == .coreMLArchive && vc.url?.scheme == "https" && vc.sha256?.count == 64 && vc.sha256 == vc.sha256?.lowercased(), "modèle des voix : catalogue renseigné (HTTPS, SHA-256, archive Core ML, \(vc.sizeMB) Mo)")
+            // caractéristiques sonores : 1,515 s donne 150 trames, moyenne nulle ; trop court refusé
+            let tone = (0 ..< VoiceFeatures.windowSamples).map { Float(0.3 * sin(Double($0) * 2 * .pi * 440 / VoiceFeatures.rate)) }
+            let fb = tone.withUnsafeBufferPointer { VoiceFeatures.fbank($0) }
+            let meanAbs = fb.map { f in (0 ..< VoiceFeatures.bins).map { b in abs((0 ..< VoiceFeatures.frames).reduce(Float(0)) { $0 + f[$1 * VoiceFeatures.bins + b] }) }.max() ?? 1 } ?? 1
+            check(fb?.count == VoiceFeatures.frames * VoiceFeatures.bins && meanAbs < 1e-2 && fb!.allSatisfy { $0.isFinite }, "caractéristiques : 150 × 80 valeurs finies, moyenne retirée")
+            check(tone.prefix(1000).withUnsafeBufferPointer { VoiceFeatures.fbank($0) } == nil, "caractéristiques : signal trop court refusé")
+        }
+
         // 11. reconnaissance réelle des personnages (le zip du modèle est donné par MSLICE_TEST_MODEL_ZIP ; installé dans un dossier d'essai)
         if let zipPath = ProcessInfo.processInfo.environment["MSLICE_TEST_MODEL_ZIP"], FileManager.default.fileExists(atPath: zipPath) {
             let spec = ModelCatalog.characters
@@ -418,6 +499,92 @@ with zipfile.ZipFile(d + '/ok.zip', 'w') as z: z.writestr('a.txt', 'x')
             try? FileManager.default.removeItem(at: ModelFiles.folder(spec))
             FaceStore.remove(info); AnalysisStore.remove(info)
         } else { print("INFO   reconnaissance réelle des personnages non essayée (MSLICE_TEST_MODEL_ZIP absent)") }
+
+        // 12b. export par protagoniste : un fichier fusionné par groupe, nommé « <fichier> – <nom> », rien d'écrasé
+        if info.duration > 45 {
+            let out = tmp.appendingPathComponent("proto-export", isDirectory: true)
+            try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+            var o = ExportOptions(); o.passthrough = false; o.format = info.isAudioOnly ? .m4a : .mp4; o.merge = true; o.folder = out.path
+            let kf = Probe.keyframes(info)
+            let groups: [(String, [Segment])] = [("Alice", [Segment(start: 4, end: 8), Segment(start: 20, end: 23)]), ("Bob / 2", [Segment(start: 30, end: 34)])]
+            var outs: [OutputItem] = []
+            for g in groups { outs += Planner.outputs(info: info, segments: g.1, opts: o, keyframes: kf, base: nil, mergeName: "\(info.url.deletingPathExtension().lastPathComponent) – \(g.0)") }
+            let names = outs.map { $0.url.deletingPathExtension().lastPathComponent }
+            check(outs.count == 2 && names[0].hasSuffix(" – Alice") && names[1].hasSuffix(" – Bob - 2") && outs[0].segments.count == 2, "export par protagoniste : 2 fichiers, un par groupe, noms sûrs \(names.map { String($0.suffix(12)) })")
+            let run = await MainActor.run { ExportRun() }
+            await MainActor.run { run.start(info: info, outputs: outs, opts: o, keyframes: kf) }
+            while !(await MainActor.run { run.finished }) { try? await Task.sleep(nanoseconds: 50_000_000) }
+            let d0 = Probe.read(outs[0].url)?.duration ?? 0, d1 = Probe.read(outs[1].url)?.duration ?? 0
+            check(abs(d0 - 7) < 0.6 && abs(d1 - 4) < 0.6, "export par protagoniste : durées \(f1(d0)) s (7 attendues, deux morceaux fusionnés) et \(f1(d1)) s (4 attendues)")
+            let again = Planner.outputs(info: info, segments: groups[0].1, opts: o, keyframes: kf, base: nil, mergeName: "\(info.url.deletingPathExtension().lastPathComponent) – Alice")
+            check(again[0].url != outs[0].url, "export par protagoniste : un fichier existant n'est jamais écrasé (\(again[0].url.lastPathComponent.suffix(16)))")
+        }
+
+        // 12c. suggestions de fusion : deux groupes d'une même personne (jamais ensemble à l'écran) remontent ; un sosie présent dans les mêmes images, non
+        do {
+            struct Rng: RandomNumberGenerator { var s: UInt64; mutating func next() -> UInt64 { s &+= 0x9E3779B97F4A7C15; var z = s; z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9; z = (z ^ (z >> 27)) &* 0x94D049BB133111EB; return z ^ (z >> 31) } }
+            var rng = Rng(s: 99)
+            func gauss() -> Float { let u1 = Float.random(in: 1e-6 ..< 1, using: &rng), u2 = Float.random(in: 0 ..< 1, using: &rng); return (-2 * logf(u1)).squareRoot() * cosf(2 * .pi * u2) }
+            func unit(_ v: [Float]) -> [Float] { let n = v.reduce(0) { $0 + $1 * $1 }.squareRoot(); return v.map { $0 / n } }
+            func noise() -> [Float] { unit((0 ..< FaceIndex.dim).map { _ in gauss() }) }
+            let base = noise(), other = noise()
+            var f = FaceIndex(duration: 60); f.step = 1
+            func add(_ t: Double, _ g: Int32, _ c: [Float]) { let q = FaceIndex.quantize(unit(zip(c, noise()).map { $0 + 0.45 * $1 })); f.t.append(Float(t)); f.box += [0.2, 0.2, 0.2, 0.3]; f.px.append(100); f.track.append(Int32(f.t.count)); f.group.append(g); f.emb += q.q; f.embScale.append(q.scale) }
+            for t in 1 ... 8 { add(Double(t), 0, base) }                       // groupe 0 : la personne A, secondes 1-8
+            for t in 21 ... 28 { add(Double(t), 1, base) }                     // groupe 1 : la même personne A plus tard
+            for t in 1 ... 8 { add(Double(t) + 0.0, 2, other) }                // groupe 2 : une autre personne, dans les mêmes images que le groupe 0
+            for t in 41 ... 48 { add(Double(t), 3, other) }                    // groupe 3 : l'autre personne plus tard
+            f.nextGroup = 4
+            let sug = FaceClustering.suggestions(f, minSimilarity: 0.3)
+            let pairs = Set(sug.map { Set([$0.a, $0.b]) })
+            check(pairs == [[0, 1], [2, 3]], "suggestions : les groupes d'une même personne remontent, jamais deux groupes présents dans les mêmes images \(sug.map { "\($0.a)-\($0.b):\(String(format: "%.2f", $0.similarity))" })")
+            f.hidden.insert(1)
+            check(FaceClustering.suggestions(f, minSimilarity: 0.3).map { Set([$0.a, $0.b]) } == [[2, 3]], "suggestions : un personnage écarté n'est plus proposé")
+        }
+
+        // 13. reconnaissance réelle des voix (le zip du modèle est donné par MSLICE_TEST_VOICE_ZIP ; installé dans le dossier d'essai)
+        if let zipPath = ProcessInfo.processInfo.environment["MSLICE_TEST_VOICE_ZIP"], FileManager.default.fileExists(atPath: zipPath), info.audio != nil {
+            let spec = ModelCatalog.voices
+            let copy = tmp.appendingPathComponent("voice-model-copy.zip")
+            try? FileManager.default.copyItem(atPath: zipPath, toPath: copy.path)
+            do { try await ModelStore.installFile(copy, spec: spec, sha256: spec.sha256 ?? "") } catch { print("INFO   installation du modèle de voix : \(error)") }
+            check(ModelFiles.verified(spec), "modèle des voix : installé et vérifié dans le dossier d'essai")
+            AnalysisStore.save(index, for: info)                     // l'analyse sonore (parole) restreint les fenêtres
+            VoiceStore.remove(info)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)         // laisse les essais précédents rendre leur mémoire
+            let before = ProcessMemory.footprintMB()
+            let box = PeakBox()
+            let t0 = Date()
+            let voices = await AnalysisRunner.runVoices(info, job: AnalysisJob(), progress: { box.note($0.memoryMB, $0) })
+            let secs = Date().timeIntervalSince(t0)
+            print("INFO   mémoire de l'appli juste après la reconnaissance des voix : \(f1(ProcessMemory.footprintMB())) Mo")
+            if let voices {
+                let list = voices.voices()
+                print("INFO   voix : \(voices.count) fenêtres de parole, \(list.count) voix, calcul interne \(f1(voices.seconds)) s")
+                for s in list.prefix(8) { print("INFO     voix \(s.id + 1) : \(f1(s.seconds)) s, \(s.turns) prises de parole") }
+                check(secs < max(30, info.duration / 4), "reconnaissance des voix : \(f1(secs)) s pour \(Fmt.time(info.duration, decimals: false)) (critère : un quart de la durée)")
+                check(box.peak < 250, "reconnaissance des voix : pic de mémoire du processus \(f1(box.peak)) Mo, modèle chargé compris (critère 250 Mo)")
+                check(!list.isEmpty && voices.group.filter { $0 >= 0 }.count * 2 > voices.count, "reconnaissance des voix : \(list.count) voix, \(voices.group.filter { $0 >= 0 }.count) fenêtres sur \(voices.count) rattachées")
+                check(VoiceStore.load(info)?.group == voices.group && VoiceStore.load(info)?.modelSHA == spec.sha256, "reconnaissance des voix : résultat enregistré, lié au modèle")
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                check(ProcessMemory.footprintMB() < before + 8, "reconnaissance des voix : l'appli ne garde rien (mémoire \(f1(before)) → \(f1(ProcessMemory.footprintMB())) Mo)")
+            } else { check(false, "reconnaissance des voix : échec") }
+            VoiceStore.remove(info)
+            let cj = AnalysisJob()
+            let run = Task { await AnalysisRunner.runVoices(info, job: cj, progress: { _ in }) }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            let tc = Date(); cj.cancel(); let cancelled = await run.value
+            check((cancelled == nil && VoiceStore.load(info) == nil) || cancelled != nil, "reconnaissance des voix : annulation en \(f1(Date().timeIntervalSince(tc))) s")
+            let weights = ModelFiles.compiled(spec).appendingPathComponent("weights/weight.bin")
+            if var w = try? Data(contentsOf: weights), !w.isEmpty {
+                w[w.count / 3] ^= 0xff; try? w.write(to: weights)
+                VoiceStore.remove(info)
+                let bad = await AnalysisRunner.runVoices(info, job: AnalysisJob(), progress: { _ in })
+                check(bad == nil && VoiceStore.load(info) == nil && !ModelFiles.verified(spec), "modèle de voix altéré : refusé avant chargement, aucune reconnaissance")
+            }
+            try? FileManager.default.removeItem(at: ModelFiles.folder(spec))
+            VoiceStore.remove(info); AnalysisStore.remove(info)
+        } else { print("INFO   reconnaissance réelle des voix non essayée (MSLICE_TEST_VOICE_ZIP absent)") }
 
         print(failures == 0 ? "TOUT EST OK" : "\(failures) échec(s)")
         return failures == 0 ? 0 : 1

@@ -7,6 +7,8 @@ import Foundation
 if let i = CommandLine.arguments.firstIndex(of: "--analyze"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1]) }
 // `mslice-mcp --faces <fichier>` : reconnaissance des personnages (modèle optionnel), même principe
 if let i = CommandLine.arguments.firstIndex(of: "--faces"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1], faces: true) }
+// `mslice-mcp --voices <fichier>` : reconnaissance des voix (modèle optionnel)
+if let i = CommandLine.arguments.firstIndex(of: "--voices"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1], voices: true) }
 
 signal(SIGPIPE, SIG_IGN)
 setvbuf(stdout, nil, _IOLBF, 0)

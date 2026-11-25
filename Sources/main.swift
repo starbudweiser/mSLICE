@@ -36,8 +36,9 @@ if let i = CommandLine.arguments.firstIndex(of: "--selftest-analysis"), CommandL
 // `mSLICE --install-model <zip>` : installe le modèle des personnages depuis un zip local (essais et captures, sans fenêtre ni réseau) ; l'empreinte du zip doit être celle du catalogue.
 if let i = CommandLine.arguments.firstIndex(of: "--install-model"), CommandLine.arguments.indices.contains(i + 1) {
     let zip = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    let which = CommandLine.arguments.indices.contains(i + 2) ? CommandLine.arguments[i + 2] : "characters"       // « voices » pour le modèle de voix
     Task { @MainActor in
-        let spec = ModelCatalog.characters
+        let spec = ModelCatalog.all.first { $0.id == which } ?? ModelCatalog.characters
         do { try await ModelStore.installFile(zip, spec: spec, sha256: spec.sha256 ?? ""); print(ModelFiles.verified(spec) ? "installé et vérifié : \(ModelFiles.folder(spec).path)" : "installé mais non conforme"); exit(ModelFiles.verified(spec) ? 0 : 1) }
         catch { print("échec : \(error.localizedDescription)"); exit(1) }
     }
