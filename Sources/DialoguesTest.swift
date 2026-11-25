@@ -143,6 +143,13 @@ enum DialoguesTest {
         Speakers.apply(&sp, candidates: cast)
         check(sp.lines[0].speaker == "p1" && sp.lines[0].manual == true, "attribution : un choix manuel survit à une nouvelle attribution")
 
+        // 6 ter. envoi : identifiant de source, marges audio, étiquettes
+        check(CastingSend.slug("Stranger Things · Saison 4 — extraits") == "stranger-things-saison-4-extraits" && CastingSend.slug("Été !!") == "ete" && CastingSend.slug("???") == "", "envoi : identifiant de source (sans accents ni signes)")
+        let cl = [CastingLine(start: 10, end: 12, text: "a", character: nil), CastingLine(start: 12.1, end: 14, text: "b", character: nil), CastingLine(start: 30, end: 31, text: "c", character: nil)]
+        let sp2 = CastingSend.spans(cl, duration: 31.1)
+        check(abs(sp2[0].start - 9.85) < 1e-9 && abs(sp2[0].end - 12.05) < 1e-9 && abs(sp2[1].start - 12.05) < 1e-9 && abs(sp2[1].end - 14.25) < 1e-9 && abs(sp2[2].end - 31.1) < 1e-9, "envoi : marges −0,15 / +0,25 s la marge se partage entre deux répliques voisines, sans dépasser la fin du fichier — \(sp2)")
+        check(CastingSend.autoTags("Hahaha, trop drôle !").contains("laugh") && CastingSend.autoTags("Tu viens ?") == ["question"] && CastingSend.autoTags("Bonjour tout le monde.") == ["greeting"] && CastingSend.autoTags("Je vais te frapper !").contains("threat") && CastingSend.autoTags("").isEmpty, "envoi : étiquettes automatiques d'après le texte")
+
         // 7. fichier de répliques : aller-retour, refus d'un autre fichier ou d'une autre version
         let src = tmp.appendingPathComponent("Film.mkv")
         let info = MediaInfo(url: src, duration: 60, size: 0, bitrate: 0, format: "", streams: [])
@@ -180,6 +187,28 @@ enum DialoguesTest {
                     check((lines?.count ?? 0) >= 3, "transcription (\(lang)) : \(lines?.count ?? 0) répliques en \(String(format: "%.2f", dt)) s pour \(Fmt.time(real.duration))")
                     for l in (lines ?? []).prefix(30) { print("       \(Fmt.time(l.start)) → \(Fmt.time(l.end))  \(l.text)") }
                     check(lines?.allSatisfy { $0.end > $0.start && $0.end <= real.duration + 1 && !$0.text.isEmpty } ?? false, "transcription : plages de temps cohérentes")
+                    // envoi à mCASTING (dossier de données temporaire : jamais la vraie boîte de réception)
+                    let home = tmp.appendingPathComponent("mcasting")
+                    setenv("MCASTING_HOME", home.path, 1)
+                    defer { unsetenv("MCASTING_HOME") }
+                    let cast = (lines ?? []).enumerated().map { CastingLine(start: $1.start, end: $1.end, text: $1.text, character: $0 % 3 == 0 ? nil : ($0 % 2 == 0 ? "Dustin" : "Steve")) }
+                    for isolate in [false, true] {
+                        var o = CastingOptions(); o.title = "Essai Dustin"; o.episode = isolate ? "voix seule" : "audio"; o.isolate = isolate
+                        let t2 = Date()
+                        do {
+                            let r = try await CastingSend.send(real, lines: cast, options: o, job: AnalysisJob()) { _ in }
+                            let dt2 = Date().timeIntervalSince(t2)
+                            let m = (try? JSONSerialization.jsonObject(with: Data(contentsOf: r.package.appendingPathComponent("manifest.json")))) as? [String: Any]
+                            let ls = m?["lines"] as? [[String: Any]] ?? []
+                            let src = m?["source"] as? [String: Any]
+                            let files = ls.compactMap { $0["audio"] as? String }
+                            let sizes = files.map { (try? FileManager.default.attributesOfItem(atPath: r.package.appendingPathComponent($0).path)[.size] as? Int) ?? 0 }
+                            check(m?["format"] as? String == "mcasting-inbox/1" && m?["kind"] as? String == "lines" && src?["kind"] as? String == "series" && ls.count == cast.count && Set(ls.compactMap { $0["key"] as? String }).count == cast.count
+                                  && files.count == cast.count && sizes.allSatisfy { $0 > 500 } && (ls.first?["lang"] as? String) == "fr", "envoi \(isolate ? "voix seule" : "audio") : \(ls.count) répliques, \(files.count) fichiers AAC (\(sizes.reduce(0, +) / 1024) Ko) en \(String(format: "%.1f", dt2)) s ; source « \(src?["title"] ?? "") »")
+                            check(!FileManager.default.fileExists(atPath: home.appendingPathComponent("Inbox").path + "/.lines-essai-dustin-\(isolate ? "voix-seule" : "audio").tmp") && (try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent("Inbox").path).filter { $0.hasPrefix(".") }.isEmpty) == true, "envoi : aucun paquet caché laissé")
+                            print("       personnages : \(r.perCharacter)")
+                        } catch { check(false, "envoi \(isolate ? "voix seule" : "audio") a échoué : \(error)") }
+                    }
                     // annulation : la tâche s'arrête vite et ne rend rien
                     let j2 = AnalysisJob()
                     let t1 = Date()

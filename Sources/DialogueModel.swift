@@ -7,7 +7,7 @@ import SwiftUI
 @MainActor
 final class DialogueModel: ObservableObject {
     unowned let doc: Doc
-    enum Phase { case source, extracting, list }
+    enum Phase { case source, extracting, list, send, sending, sent }
     enum Choice: Hashable { case subtitles(String), transcribe }
 
     @Published private(set) var data: DialogueSet?
@@ -29,6 +29,13 @@ final class DialogueModel: ObservableObject {
     @Published var showLane = true
     @Published var filter: String?                         // nom du personnage dont on ne montre que les répliques
     private var findSink: AnyCancellable?
+    // Envoi à mCASTING
+    @Published var cast = DialogueModel.loadCast()
+    @Published var sendNames: [String: String] = [:]       // nom affiché → nom envoyé à mCASTING
+    @Published private(set) var sendProgress = 0.0
+    @Published private(set) var sendFailure: String?
+    @Published private(set) var sendResult: CastingSend.Result?
+    private var sendJob: AnalysisJob?
     private var job: AnalysisJob?
     private var listenToken = UUID()
     private var saveWork: DispatchWorkItem?
@@ -103,6 +110,80 @@ final class DialogueModel: ObservableObject {
     }
     func color(named n: String) -> Color { Color(nsColor: nsColor(named: n)) }
     func protagonist(named n: String) -> Protagonist? { protagonists.first { $0.title == n } }
+
+    // MARK: Envoi à mCASTING
+
+    private static func loadCast() -> CastingOptions {
+        var o = CastingOptions(); let d = UserDefaults.standard
+        if let k = d.string(forKey: "dlg.cast.kind") { o.kind = k }
+        if d.object(forKey: "dlg.cast.audio") != nil { o.audio = d.bool(forKey: "dlg.cast.audio") }
+        if d.object(forKey: "dlg.cast.isolate") != nil { o.isolate = d.bool(forKey: "dlg.cast.isolate") }
+        if d.object(forKey: "dlg.cast.tags") != nil { o.tags = d.bool(forKey: "dlg.cast.tags") }
+        return o
+    }
+    private func saveCast() {
+        let d = UserDefaults.standard
+        d.set(cast.kind, forKey: "dlg.cast.kind"); d.set(cast.audio, forKey: "dlg.cast.audio"); d.set(cast.isolate, forKey: "dlg.cast.isolate"); d.set(cast.tags, forKey: "dlg.cast.tags")
+        mutate { $0.castTitle = cast.title; $0.castEpisode = cast.episode }
+    }
+
+    var castingAvailable: Bool { CastingSend.available }
+    var voiceIsolationAvailable: Bool { VoiceIsolation.available }
+    /// Répliques à envoyer : les non écartées, dans l'ordre du temps.
+    var sendable: [DialogueLine] { (data?.lines ?? []).filter { !$0.discarded }.sorted { $0.start < $1.start } }
+
+    func openSend() {
+        guard hasLines else { return }
+        if cast.title.isEmpty {
+            if let t = data?.castTitle, !t.isEmpty { cast.title = t }
+            else { cast.title = doc.info.url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: ".", with: " ") }
+        }
+        if cast.episode.isEmpty { cast.episode = data?.castEpisode ?? "" }
+        let l = (data?.language ?? language).prefix(2).lowercased()
+        cast.lang = ["fr", "en", "es", "it", "de"].contains(String(l)) ? String(l) : "fr"
+        if !voiceIsolationAvailable { cast.isolate = false }
+        for n in speakerNames.map(\.name) where sendNames[n] == nil { sendNames[n] = n }
+        sendFailure = nil
+        phase = .send
+    }
+
+    func closeSend() { phase = .list }
+
+    func send() {
+        guard phase == .send, !sendable.isEmpty else { return }
+        guard castingAvailable else { sendFailure = "dlg.send.nocasting"; return }
+        saveCast()
+        let lines = sendable.map { l -> CastingLine in
+            let n = displayName(l).flatMap { sendNames[$0] ?? $0 }
+            return CastingLine(start: l.start, end: l.end, text: l.text, character: n?.trimmingCharacters(in: .whitespaces).isEmpty == true ? nil : n)
+        }
+        let job = AnalysisJob(); sendJob = job
+        sendProgress = 0; sendFailure = nil; phase = .sending
+        let info = doc.info, options = cast
+        Task { [weak self] in
+            do {
+                let r = try await CastingSend.send(info, lines: lines, options: options, job: job) { p in Task { @MainActor [weak self] in self?.sendProgress = p } }
+                self?.sendResult = r; self?.phase = .sent
+            } catch {
+                guard let self else { return }
+                self.phase = .send
+                if job.cancelled { return }
+                switch error as? CastingSend.Failure {
+                case .isolation?: self.sendFailure = "dlg.send.fail.isolation"
+                case .ffmpeg?, .noAudio?: self.sendFailure = "dlg.send.fail.audio"
+                default: self.sendFailure = "dlg.send.fail"
+                }
+            }
+            self?.sendJob = nil
+        }
+    }
+
+    func cancelSend() { sendJob?.cancel() }
+    func finishSend() { sendResult = nil; phase = .list }
+    func openCasting() {
+        guard let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: CastingSend.bundleID) else { return }
+        NSWorkspace.shared.openApplication(at: u, configuration: NSWorkspace.OpenConfiguration())
+    }
 
     // MARK: Piste et liste
 
@@ -217,6 +298,7 @@ final class DialogueModel: ObservableObject {
     private func fail(_ key: String) { failure = key; phase = .source }
 
     func cancel() {
+        sendJob?.cancel()
         job?.cancel(); job = nil
         if phase == .extracting { phase = data == nil ? .source : .list }
     }

@@ -28,6 +28,8 @@ struct DialogueSet: Codable, Equatable, Sendable {
     var detail = ""                        // piste ou fichier choisi, ou langue de la transcription
     var language = ""
     var lines: [DialogueLine] = []
+    var castTitle: String?                 // titre et épisode de l'envoi à mCASTING, gardés pour la prochaine fois
+    var castEpisode: String?
 
     var active: [DialogueLine] { lines.filter { !$0.discarded } }
 

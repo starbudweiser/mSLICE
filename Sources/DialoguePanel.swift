@@ -13,6 +13,9 @@ struct DialoguePanel: View {
         case .source: DialogueSource(dialogues: dialogues, doc: doc)
         case .extracting: VStack(spacing: 0) { Spacer(minLength: 0); DialogueRunning(dialogues: dialogues); Spacer(minLength: 0) }
         case .list: DialogueList(dialogues: dialogues)
+        case .send: DialogueSend(dialogues: dialogues, doc: doc)
+        case .sending: VStack(spacing: 0) { Spacer(minLength: 0); DialogueSending(dialogues: dialogues); Spacer(minLength: 0) }
+        case .sent: VStack(spacing: 0) { Spacer(minLength: 0); DialogueSent(dialogues: dialogues); Spacer(minLength: 0) }
         }
     }
 }
@@ -295,9 +298,8 @@ private struct DialogueList: View {
 
     private var footer: some View {
         VStack(spacing: 6) {
-            Button {} label: { Text(L.t("dlg.send", dialogues.activeCount)).frame(maxWidth: .infinity) }
-                .buttonStyle(CastButton()).disabled(true).opacity(0.45)
-            Text(L.t("dlg.send.soon")).font(.system(size: 10.5)).foregroundStyle(Theme.text2).multilineTextAlignment(.center)
+            Button { dialogues.openSend() } label: { Text(L.t("dlg.send", dialogues.activeCount)).frame(maxWidth: .infinity) }
+                .buttonStyle(CastButton()).disabled(dialogues.activeCount == 0).opacity(dialogues.activeCount == 0 ? 0.45 : 1)
             HStack(spacing: 5) { Key("Espace"); Text(L.t("dlg.keys.listen")).font(.system(size: 10.5)).foregroundStyle(Theme.text2) }
         }
     }
@@ -319,6 +321,125 @@ private struct SpeakerChip: View {
         .foregroundStyle(on ? Theme.onAccent : Theme.text).background(on ? Theme.accent : Theme.ctl, in: Capsule())
         .task(id: name) {
             if let person = dialogues.protagonist(named: name)?.person { image = await dialogues.doc.find.avatar(person) }
+        }
+    }
+}
+
+// MARK: - Envoi à mCASTING
+
+private struct SwitchRow: View {
+    let title: String
+    @Binding var isOn: Bool
+    var enabled = true
+    var body: some View {
+        HStack { Text(title).font(.system(size: 12.5)).lineLimit(2).fixedSize(horizontal: false, vertical: true); Spacer(minLength: 6); FlatSwitch(isOn: $isOn) }
+            .padding(.vertical, 3).opacity(enabled ? 1 : 0.45).disabled(!enabled)
+    }
+}
+
+private struct FieldRow: View {
+    let label: String
+    @Binding var text: String
+    var placeholder = ""
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label).font(.system(size: 11.5)).foregroundStyle(Theme.text2).frame(width: 58, alignment: .leading)
+            TextField(placeholder, text: $text).textFieldStyle(.plain).font(.system(size: 12.5)).padding(.horizontal, 8).frame(height: 28)
+                .background(Theme.ctl, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+}
+
+private struct DialogueSend: View {
+    @ObservedObject var dialogues: DialogueModel
+    let doc: Doc
+    var body: some View {
+        VStack(spacing: 10) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 10) {
+                    Card(padding: 12, spacing: 8) {
+                        SectionTitle(L.t("dlg.send.source"))
+                        Segmented(options: [("series", L.t("dlg.send.kind.series")), ("film", L.t("dlg.send.kind.film")), ("other", L.t("dlg.send.kind.other"))], selection: $dialogues.cast.kind)
+                        FieldRow(label: L.t("dlg.send.title"), text: $dialogues.cast.title)
+                        FieldRow(label: L.t("dlg.send.episode"), text: $dialogues.cast.episode, placeholder: L.t("dlg.send.episode.ph"))
+                        HStack(spacing: 8) {
+                            Text(L.t("dlg.send.lang")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).frame(width: 58, alignment: .leading)
+                            Menu {
+                                ForEach(TranscriptionSupport.languages, id: \.code) { l in Button(l.label) { dialogues.cast.lang = String(l.code.prefix(2)).lowercased() } }
+                            } label: { Text((TranscriptionSupport.languages.first { $0.code.hasPrefix(dialogues.cast.lang) }?.label ?? dialogues.cast.lang) + " ▾").font(.system(size: 12.5)) }
+                                .menuStyle(.borderlessButton).fixedSize()
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    Card(padding: 12, spacing: 6) {
+                        HStack { SectionTitle(L.t("dlg.send.chars")); Spacer(minLength: 4); Text(L.t("dlg.send.chars.sub")).font(.system(size: 10.5)).foregroundStyle(Theme.text2) }
+                        let names = dialogues.speakerNames
+                        if names.isEmpty { Text(L.t("dlg.send.chars.none")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
+                        ForEach(names, id: \.name) { n in
+                            HStack(spacing: 8) {
+                                Circle().fill(dialogues.color(named: n.name)).frame(width: 8, height: 8)
+                                TextField(n.name, text: Binding(get: { dialogues.sendNames[n.name] ?? n.name }, set: { dialogues.sendNames[n.name] = $0 }))
+                                    .textFieldStyle(.plain).font(.system(size: 12.5)).padding(.horizontal, 8).frame(height: 26)
+                                    .background(Theme.ctl, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                Text("\(n.count)").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).frame(minWidth: 18, alignment: .trailing)
+                            }
+                        }
+                        if dialogues.unknownCount > 0 { Text(L.t("dlg.send.nochar", dialogues.unknownCount)).font(.system(size: 11)).foregroundStyle(Theme.warn) }
+                    }
+                    Card(padding: 12, spacing: 4) {
+                        SectionTitle(L.t("dlg.send.content"))
+                        SwitchRow(title: L.t("dlg.send.audio"), isOn: $dialogues.cast.audio, enabled: doc.info.audio != nil)
+                        SwitchRow(title: L.t("dlg.send.isolate"), isOn: $dialogues.cast.isolate, enabled: dialogues.cast.audio && dialogues.voiceIsolationAvailable)
+                        if dialogues.cast.isolate && dialogues.cast.audio { Text(L.t("dlg.send.isolate.note")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
+                        SwitchRow(title: L.t("dlg.send.tags"), isOn: $dialogues.cast.tags)
+                    }
+                    Text(L.t("dlg.send.copyright")).font(.system(size: 10.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+                    if let f = dialogues.sendFailure { Text(L.t(f)).font(.system(size: 11.5)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4) }
+                }
+            }
+            VStack(spacing: 6) {
+                let ok = dialogues.castingAvailable && !dialogues.cast.title.trimmingCharacters(in: .whitespaces).isEmpty
+                Button { dialogues.send() } label: { Text(L.t("dlg.send", dialogues.sendable.count)).frame(maxWidth: .infinity) }.buttonStyle(CastButton()).disabled(!ok).opacity(ok ? 1 : 0.45)
+                if !dialogues.castingAvailable { Text(L.t("dlg.send.nocasting")).font(.system(size: 10.5)).foregroundStyle(Theme.warn) }
+                Button { dialogues.closeSend() } label: { Text(L.t("dlg.cancel")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton())
+            }
+        }
+    }
+}
+
+private struct DialogueSending: View {
+    @ObservedObject var dialogues: DialogueModel
+    var body: some View {
+        Card(padding: 16, spacing: 12) {
+            Text(L.t("dlg.send.running")).font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.ctl)
+                    Capsule().fill(Theme.ok).frame(width: max(g.size.width * dialogues.sendProgress, 6))
+                }
+            }.frame(height: 6)
+            Text("\(Int(dialogues.sendProgress * 100)) %").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).frame(maxWidth: .infinity)
+            Button { dialogues.cancelSend() } label: { Text(L.t("dlg.cancel")).frame(minWidth: 90) }.buttonStyle(FlatButton()).frame(maxWidth: .infinity)
+        }
+    }
+}
+
+private struct DialogueSent: View {
+    @ObservedObject var dialogues: DialogueModel
+    var body: some View {
+        let r = dialogues.sendResult
+        Card(padding: 16, spacing: 10) {
+            VStack(spacing: 10) {
+                Image(systemName: "checkmark").font(.system(size: 18, weight: .bold)).foregroundStyle(.white).frame(width: 44, height: 44).background(Theme.ok, in: Circle())
+                Text(L.t((r?.count ?? 0) == 1 ? "dlg.sent.title1" : "dlg.sent.title", r?.count ?? 0)).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+                let head = dialogues.cast.title + (dialogues.cast.episode.isEmpty ? "" : " · " + dialogues.cast.episode)
+                let who = (r?.perCharacter ?? []).map { "\($0.name) \($0.count)" }.joined(separator: ", ")
+                Text(L.t("dlg.sent.body", head + (who.isEmpty ? "." : " — " + who + "."))).font(.system(size: 11.5)).foregroundStyle(Theme.text2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            }.frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                Button { dialogues.openCasting() } label: { Text(L.t("dlg.sent.open")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(kind: .primary))
+                Button { dialogues.finishSend() } label: { Text(L.t("dlg.sent.done")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton())
+            }
         }
     }
 }
