@@ -150,6 +150,17 @@ enum DialoguesTest {
         check(abs(sp2[0].start - 9.85) < 1e-9 && abs(sp2[0].end - 12.05) < 1e-9 && abs(sp2[1].start - 12.05) < 1e-9 && abs(sp2[1].end - 14.25) < 1e-9 && abs(sp2[2].end - 31.1) < 1e-9, "envoi : marges −0,15 / +0,25 s la marge se partage entre deux répliques voisines, sans dépasser la fin du fichier — \(sp2)")
         check(CastingSend.autoTags("Hahaha, trop drôle !").contains("laugh") && CastingSend.autoTags("Tu viens ?") == ["question"] && CastingSend.autoTags("Bonjour tout le monde.") == ["greeting"] && CastingSend.autoTags("Je vais te frapper !").contains("threat") && CastingSend.autoTags("").isEmpty, "envoi : étiquettes automatiques d'après le texte")
 
+        // 6 quater. export : SRT (relu par l'analyse des sous-titres), noms de fichiers, noms lus sur disque
+        let ex = [CastingLine(start: 3723.5, end: 3725, text: "Bonjour.", character: "Steve"), CastingLine(start: 1, end: 2.25, text: "Salut", character: nil)]
+        let back2 = Subtitles.dialogue(from: Subtitles.parse(DialogueExport.srt(ex)))
+        check(DialogueExport.srtTime(3723.5) == "01:02:03,500" && DialogueExport.srtTime(0.0004) == "00:00:00,000" && DialogueExport.srt(ex).contains("[Steve] Bonjour.") && back2.count == 2 && back2.first { $0.text == "Bonjour." }?.who == "Steve", "export : SRT « [Nom] texte » relu avec le même personnage")
+        check(DialogueExport.safeName("Steve / Hopper: \"1\"") == "Steve _ Hopper_ _1_" && DialogueExport.safeName("   ") == "sans nom", "export : noms de fichiers sûrs")
+        var fx = FaceIndex(duration: 10); fx.names[3] = "Dustin"
+        var vx = VoiceIndex(duration: 10); vx.names[2] = "Nancy"
+        check(DialogueExport.name(of: DialogueLine(start: 0, end: 1, text: "a", who: "Hopper"), faces: fx, voices: vx) == "Hopper" && DialogueExport.name(of: DialogueLine(start: 0, end: 1, text: "a", speaker: "p3"), faces: fx, voices: vx) == "Dustin"
+              && DialogueExport.name(of: DialogueLine(start: 0, end: 1, text: "a", speaker: "p1"), faces: fx, voices: vx) == "Character 2" && DialogueExport.name(of: DialogueLine(start: 0, end: 1, text: "a", speaker: "v2"), faces: fx, voices: vx) == "Nancy"
+              && DialogueExport.name(of: DialogueLine(start: 0, end: 1, text: "a"), faces: fx, voices: vx) == nil, "export : nom du personnage lu sur disque (sous-titres, visage nommé, voix, anonyme)")
+
         // 7. fichier de répliques : aller-retour, refus d'un autre fichier ou d'une autre version
         let src = tmp.appendingPathComponent("Film.mkv")
         let info = MediaInfo(url: src, duration: 60, size: 0, bitrate: 0, format: "", streams: [])
@@ -208,6 +219,32 @@ enum DialoguesTest {
                             check(!FileManager.default.fileExists(atPath: home.appendingPathComponent("Inbox").path + "/.lines-essai-dustin-\(isolate ? "voix-seule" : "audio").tmp") && (try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent("Inbox").path).filter { $0.hasPrefix(".") }.isEmpty) == true, "envoi : aucun paquet caché laissé")
                             print("       personnages : \(r.perCharacter)")
                         } catch { check(false, "envoi \(isolate ? "voix seule" : "audio") a échoué : \(error)") }
+                    }
+                    // export WAV + SRT à côté d'une copie de la vidéo (le dossier est créé près du fichier : on travaille sur une copie temporaire)
+                    let copy = tmp.appendingPathComponent("Dustin copie.mp4")
+                    try? FileManager.default.copyItem(at: url, to: copy)
+                    if let cinfo = Probe.read(copy) {
+                        do {
+                            let folder = try await DialogueExport.write(cinfo, lines: Array(cast.prefix(6)), isolate: true, job: AnalysisJob()) { _ in }
+                            let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
+                            let wavs = names.filter { $0.hasSuffix(".wav") }
+                            check(wavs.count == 6 && names.contains("Dustin copie.srt") && wavs.first?.hasPrefix("0001") == true && folder.lastPathComponent == "Dustin copie – dialogues", "export : \(wavs.count) WAV + SRT dans « \(folder.lastPathComponent) » — \(names.prefix(3))")
+                            let again = try await DialogueExport.write(cinfo, lines: Array(cast.prefix(1)), isolate: false, job: AnalysisJob()) { _ in }
+                            check(again.lastPathComponent == "Dustin copie – dialogues 2", "export : un dossier existant n'est jamais écrasé (« \(again.lastPathComponent) »)")
+                        } catch { check(false, "export a échoué : \(error)") }
+                        // outils de l'agent : list_dialogue et send_dialogue lisent le .msdialog
+                        var ds = DialogueSet(duration: cinfo.duration, kind: .transcript, detail: "essai", language: "fr")
+                        ds.lines = (lines ?? []).map { l in var m = l; m.speaker = nil; return m }
+                        ds.lines[0].who = "Steve"; ds.lines[1].discarded = true
+                        DialogueStore.save(ds, for: cinfo)
+                        let ls = await Agent.executeForTests("list_dialogue", ["path": copy.path])
+                        check(!ls.isError && ls.plainText.contains("\"count\" : \(ds.lines.count - 1)") && ls.plainText.contains("Steve"), "agent : list_dialogue rend les répliques non écartées avec leur personnage")
+                        let none = await Agent.executeForTests("list_dialogue", ["path": copy.path, "character": "Personne"])
+                        check(none.isError, "agent : personnage inconnu → erreur claire")
+                        let sd = await Agent.executeForTests("send_dialogue", ["path": copy.path, "title": "Essai agent", "character": "Steve", "voice_only": true])
+                        check(!sd.isError && sd.plainText.contains("\"sent\" : 1"), "agent : send_dialogue envoie les répliques de Steve (\(sd.plainText.prefix(60).replacingOccurrences(of: "\n", with: " ")))")
+                        let bad = await Agent.executeForTests("send_dialogue", ["path": copy.path])
+                        check(bad.isError, "agent : send_dialogue sans titre → erreur")
                     }
                     // annulation : la tâche s'arrête vite et ne rend rien
                     let j2 = AnalysisJob()

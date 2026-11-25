@@ -104,6 +104,11 @@ enum Agent {
                 properties: [("path", "string", "Absolute path of the file")], required: ["path"]),
         ToolDef(name: "name_subject", description: "Give a name to a recognised character or voice (stored with the file's analysis, shown in mSLICE's Find tab, usable in find_scenes as person:<name> / voice:<name>). An empty name makes it anonymous again. Names are limited to 40 characters. For a voice (subject \"voice:2\"), link_to_person links it to a character (\"person:0\", \"0\" or its name) so that speaks:<character> finds it; an empty link_to_person unlinks it.",
                 properties: [("path", "string", "Absolute path of the file"), ("subject", "string", "The character (\"person:0\", \"0\" or its current name) or the voice (\"voice:2\")"), ("name", "string", "The new name (empty to clear)"), ("link_to_person", "string", "Voices only: the character this voice belongs to (empty to unlink)")], required: ["path", "subject", "name"]),
+        ToolDef(name: "list_dialogue", description: "List the dialogue lines extracted in mSLICE's Dialogues tab for a file (text from the subtitles or from macOS speech transcription, with the character who says each line: the name written in the subtitles, else the recognised protagonist by voice or face). The user extracts them in the app (the agent cannot start the extraction). Returns the lines (index from 1, start, end, text, character) and the characters with their line counts. Discarded lines are left out.",
+                properties: [("path", "string", "Absolute path of the file"), ("character", "string", "Only the lines of this character (name as returned by this tool)"), ("limit", "number", "Maximum lines returned (default 200, max 1000)")], required: ["path"]),
+        ToolDef(name: "send_dialogue", description: "Send the dialogue lines of a file to mCASTING (the user's voice-casting app): one package in its inbox with, for each line, its text, character, language, duration, automatic tags and its own AAC audio clip (voice_only removes music and noise with macOS voice isolation). Lines come from the Dialogues tab (see list_dialogue). Films and series are copyrighted material: private tests only. Writes only into mCASTING's inbox; nothing in the source folder.",
+                properties: [("path", "string", "Absolute path of the file"), ("title", "string", "Title of the film or series (required)"), ("kind", "string", "series (default), film or other"), ("episode", "string", "Episode or note, e.g. \"Season 4 · clips\""), ("language", "string", "Language of the lines: fr, en, es, it or de (default: the extraction's language)"),
+                             ("character", "string", "Only the lines of this character"), ("audio", "boolean", "Include each line's audio (default true)"), ("voice_only", "boolean", "Isolate the voice (default false)"), ("tags", "boolean", "Add automatic tags from the text (default true)")], required: ["path", "title"]),
         ToolDef(name: "get_segments", description: "The pieces (segments) marked to keep in a file, in order, numbered from 1. Read live from mSLICE if the file is open, else from the saved session.",
                 properties: [("path", "string", "Absolute path of the file")], required: ["path"]),
         ToolDef(name: "set_segments", description: "Replace all the pieces of a file. Pieces are clamped to the file, sorted, and overlapping ones are merged. If mSLICE has the file open, the timeline updates live.",
@@ -262,6 +267,11 @@ enum Agent {
 
     // MARK: Outils
 
+    /// Sans le contrôle du réglage « Autoriser un agent » : réservé aux essais (`--selftest-*`), jamais appelé par un agent.
+    static func executeForTests(_ name: String, _ a: [String: Any]) async -> ToolOutput {
+        do { return try await execute(name, a, host: nil) } catch { return .text(error.localizedDescription, error: true) }
+    }
+
     private static func execute(_ name: String, _ a: [String: Any], host: AgentHost?) async throws -> ToolOutput {
         switch name {
         case "get_state":
@@ -405,6 +415,12 @@ enum Agent {
 
         case "find_scenes":
             return try await findScenes(a, host: host)
+
+        case "list_dialogue":
+            return try await listDialogue(a)
+
+        case "send_dialogue":
+            return try await sendDialogue(a)
 
         case "preview_export", "export":
             return try await exportTool(a, dryRun: name == "preview_export", host: host)
@@ -579,6 +595,59 @@ enum Agent {
         var o: [String: Any] = ["file": i.url.path, "id": "voice:\(id)", "name": name ?? "Voice \(id + 1)", "named": name != nil, "live_in_app": live]
         if let p = next.link[id] { o["linked_character"] = "person:\(p)" }
         return .json(o)
+    }
+
+    // MARK: Dialogues
+
+    private static func dialogueLines(_ a: [String: Any], _ i: MediaInfo) throws -> (DialogueSet, [(DialogueLine, String?)]) {
+        guard let set = DialogueStore.load(i), !set.lines.isEmpty else { throw AgentError("No dialogue lines for this file yet: the user extracts them in mSLICE's Dialogues tab (subtitles or transcription).") }
+        let f = FaceStore.load(i), v = VoiceStore.load(i)
+        var rows = set.lines.filter { !$0.discarded }.sorted { $0.start < $1.start }.map { ($0, DialogueExport.name(of: $0, faces: f, voices: v)) }
+        if let c = (a["character"] as? String)?.trimmingCharacters(in: .whitespaces), !c.isEmpty {
+            rows = rows.filter { $0.1?.caseInsensitiveCompare(c) == .orderedSame }
+            if rows.isEmpty { throw AgentError("No line for the character \"\(c)\". list_dialogue gives the character names.") }
+        }
+        return (set, rows)
+    }
+
+    private static func listDialogue(_ a: [String: Any]) async throws -> ToolOutput {
+        let i = try await info(try fileURL(a))
+        let (set, rows) = try dialogueLines(a, i)
+        let limit = min(max(Int((a["limit"] as? NSNumber)?.doubleValue ?? 200), 1), 1000)
+        var count: [String: Int] = [:]
+        for r in rows { count[r.1 ?? "(unknown)", default: 0] += 1 }
+        let lines = rows.prefix(limit).enumerated().map { (k, r) -> [String: Any] in
+            var d: [String: Any] = ["index": k + 1, "start": r1(r.0.start), "end": r1(r.0.end), "text": r.0.text]
+            if let n = r.1 { d["character"] = n }
+            return d
+        }
+        return .json(["file": i.url.path, "source": set.kind.rawValue, "detail": set.detail, "count": rows.count, "returned": lines.count,
+                      "characters": count.map { ["name": $0.key, "lines": $0.value] as [String: Any] }.sorted { ($0["lines"] as? Int ?? 0) > ($1["lines"] as? Int ?? 0) },
+                      "lines": lines, "hint": "send_dialogue sends them to mCASTING."])
+    }
+
+    private static func sendDialogue(_ a: [String: Any]) async throws -> ToolOutput {
+        let i = try await info(try fileURL(a))
+        guard let title = (a["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty, title.count <= 200 else { throw AgentError("title is required (the film or series title, 200 characters at most).") }
+        let (set, rows) = try dialogueLines(a, i)
+        guard CastingSend.available else { throw AgentError("mCASTING was not found on this Mac (no data folder, app not installed).") }
+        var o = CastingOptions(); o.title = title
+        let kind = (a["kind"] as? String)?.lowercased() ?? "series"
+        guard ["series", "film", "other"].contains(kind) else { throw AgentError("kind must be series, film or other.") }
+        o.kind = kind
+        o.episode = String(((a["episode"] as? String) ?? "").prefix(200))
+        let lang = ((a["language"] as? String) ?? set.language).prefix(2).lowercased()
+        o.lang = ["fr", "en", "es", "it", "de"].contains(String(lang)) ? String(lang) : "fr"
+        o.audio = (a["audio"] as? Bool ?? true) && i.audio != nil
+        o.isolate = o.audio && (a["voice_only"] as? Bool ?? false)
+        o.tags = a["tags"] as? Bool ?? true
+        if o.isolate, !VoiceIsolation.available { throw AgentError("Voice isolation is not available on this Mac.") }
+        let lines = rows.map { CastingLine(start: $0.0.start, end: $0.0.end, text: $0.0.text, character: $0.1) }
+        do {
+            let r = try await CastingSend.send(i, lines: lines, options: o, job: AnalysisJob()) { _ in }
+            return .json(["sent": r.count, "with_audio": r.withAudio, "source_id": r.sourceID, "characters": r.perCharacter.map { ["name": $0.name, "lines": $0.count] as [String: Any] },
+                          "package": r.package.lastPathComponent, "note": "mCASTING imports the package by itself (while it runs, or at its next start)."])
+        } catch { throw AgentError("Sending to mCASTING failed (\(error)).") }
     }
 
     private static func nameSubject(_ a: [String: Any], host: AgentHost?) async throws -> ToolOutput {

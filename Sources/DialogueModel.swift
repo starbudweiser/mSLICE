@@ -185,6 +185,50 @@ final class DialogueModel: ObservableObject {
         NSWorkspace.shared.openApplication(at: u, configuration: NSWorkspace.OpenConfiguration())
     }
 
+    // MARK: Morceaux et fichiers
+
+    @Published private(set) var exporting = false
+    @Published private(set) var exportProgress = 0.0
+
+    /// Les répliques visibles et non écartées (avec le filtre de personnage et la recherche), pour les morceaux et l'export.
+    var chosen: [DialogueLine] { visible.filter { !$0.discarded }.sorted { $0.start < $1.start } }
+
+    private func castingLines(_ lines: [DialogueLine]) -> [CastingLine] {
+        lines.map { l in CastingLine(start: l.start, end: l.end, text: l.text, character: displayName(l)) }
+    }
+
+    /// Ajoute les répliques choisies aux morceaux du fichier (avec leurs marges), annulable par ⌘Z.
+    func addToPieces() {
+        let lines = chosen
+        guard !lines.isEmpty else { return }
+        let spans = CastingSend.spans(castingLines(lines), duration: doc.duration)
+        doc.snapshot()
+        for s in spans where s.end > s.start { doc.addSegment(s.start, s.end) }
+        if let f = spans.first { doc.ensureVisible(f.start) }
+        AppModel.shared.flash(L.t(lines.count == 1 ? "dlg.pieces.added1" : "dlg.pieces.added", lines.count))
+    }
+
+    /// Un WAV par réplique choisie et un SRT, dans un dossier à côté de la vidéo (voix seule si l'option est cochée dans l'écran d'envoi).
+    func exportFiles() {
+        let lines = chosen
+        guard !lines.isEmpty, !exporting, doc.info.audio != nil else { return }
+        exporting = true; exportProgress = 0
+        let job = AnalysisJob(); sendJob = job
+        let info = doc.info, isolate = cast.isolate && voiceIsolationAvailable, cl = castingLines(lines)
+        Task { [weak self] in
+            do {
+                let folder = try await DialogueExport.write(info, lines: cl, isolate: isolate, job: job) { p in Task { @MainActor [weak self] in self?.exportProgress = p } }
+                self?.exporting = false
+                AppModel.shared.flash(L.t("dlg.export.done", lines.count, folder.lastPathComponent))
+                if !AppModel.isSelfTest { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+            } catch {
+                self?.exporting = false
+                if !job.cancelled { AppModel.shared.flash(L.t("dlg.export.fail")) }
+            }
+            self?.sendJob = nil
+        }
+    }
+
     // MARK: Piste et liste
 
     var lane: [DialogueLine] { data?.lines ?? [] }

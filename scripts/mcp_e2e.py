@@ -50,7 +50,7 @@ try:
     check(r["serverInfo"]["name"] == "mslice" and "tools" in r["capabilities"], "initialize : serveur « mslice »")
     rpc("notifications/initialized", notify=True)
     tools = [t["name"] for t in rpc("tools/list")["result"]["tools"]]
-    check(len(tools) >= 21 and "list_subjects" in tools and "name_subject" in tools and "export" in tools and "get_frame" in tools and "analyze_media" in tools and "find_scenes" in tools, f"tools/list : {len(tools)} outils")
+    check(len(tools) >= 21 and "list_subjects" in tools and "name_subject" in tools and "export" in tools and "get_frame" in tools and "analyze_media" in tools and "find_scenes" in tools and "list_dialogue" in tools and "send_dialogue" in tools, f"tools/list : {len(tools)} outils")
 
     err, txt, _ = call("get_state")
     check(err and "off" in str(txt), "désactivé par défaut : l'agent est refusé avec une explication")

@@ -102,6 +102,12 @@ extension L {
         "dlg.send.fail": ["L'envoi a échoué. Réessayez.", "The sending failed. Try again.", "El envío ha fallado. Inténtalo de nuevo.", "L'invio non è riuscito. Riprova."],
         "dlg.send.fail.isolation": ["La voix seule n'a pas pu être calculée. Décochez-la ou réessayez.", "The voice-only audio could not be computed. Untick it or try again.", "No se ha podido calcular la voz sola. Desmárcala o inténtalo de nuevo.", "Non è stato possibile calcolare la voce sola. Deseleziona l'opzione o riprova."],
         "dlg.send.fail.audio": ["L'audio des répliques n'a pas pu être découpé.", "The audio of the lines could not be cut.", "No se ha podido cortar el audio de las frases.", "Non è stato possibile tagliare l'audio delle battute."],
+        "dlg.pieces.add": ["Ajouter aux morceaux", "Add to pieces", "Añadir a fragmentos", "Aggiungi alle parti"],
+        "dlg.pieces.added": ["%d morceaux ajoutés. ⌘Z annule.", "%d pieces added. ⌘Z undoes it.", "%d fragmentos añadidos. ⌘Z lo deshace.", "%d parti aggiunte. ⌘Z annulla."],
+        "dlg.pieces.added1": ["1 morceau ajouté. ⌘Z annule.", "1 piece added. ⌘Z undoes it.", "1 fragmento añadido. ⌘Z lo deshace.", "1 parte aggiunta. ⌘Z annulla."],
+        "dlg.export": ["Exporter WAV + SRT", "Export WAV + SRT", "Exportar WAV + SRT", "Esporta WAV + SRT"],
+        "dlg.export.done": ["%d répliques exportées dans « %@ ».", "%d lines exported to “%@”.", "%d frases exportadas en «%@».", "%d battute esportate in «%@»."],
+        "dlg.export.fail": ["L'export a échoué.", "The export failed.", "La exportación ha fallado.", "L'esportazione non è riuscita."],
         "dlg.keys.listen": ["écouter la réplique", "listen to the line", "escuchar la frase", "ascoltare la battuta"],
     ]
 }

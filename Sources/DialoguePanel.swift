@@ -298,6 +298,13 @@ private struct DialogueList: View {
 
     private var footer: some View {
         VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Button { dialogues.addToPieces() } label: { Text(L.t("dlg.pieces.add")).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity) }.buttonStyle(FlatButton())
+                    .disabled(dialogues.chosen.isEmpty).opacity(dialogues.chosen.isEmpty ? 0.45 : 1)
+                Button { dialogues.exportFiles() } label: {
+                    Text(dialogues.exporting ? "\(Int(dialogues.exportProgress * 100)) %" : L.t("dlg.export")).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
+                }.buttonStyle(FlatButton()).disabled(dialogues.exporting || dialogues.chosen.isEmpty).opacity(dialogues.exporting || dialogues.chosen.isEmpty ? 0.45 : 1)
+            }.font(.system(size: 11.5))
             Button { dialogues.openSend() } label: { Text(L.t("dlg.send", dialogues.activeCount)).frame(maxWidth: .infinity) }
                 .buttonStyle(CastButton()).disabled(dialogues.activeCount == 0).opacity(dialogues.activeCount == 0 ? 0.45 : 1)
             HStack(spacing: 5) { Key("Espace"); Text(L.t("dlg.keys.listen")).font(.system(size: 10.5)).foregroundStyle(Theme.text2) }
