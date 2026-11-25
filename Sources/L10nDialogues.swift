@@ -70,6 +70,7 @@ extension L {
         "dlg.who.nobody": ["Personne (inconnu)", "Nobody (unknown)", "Nadie (desconocido)", "Nessuno (sconosciuto)"],
         "dlg.who.again": ["Attribuer de nouveau", "Attribute again", "Atribuir de nuevo", "Attribuisci di nuovo"],
         "dlg.who.name.ph": ["Nom du personnage", "Character name", "Nombre del personaje", "Nome del personaggio"],
+        "dlg.who.open": ["Reconnaître les personnages (onglet Trouver)", "Recognise the characters (Find tab)", "Reconocer los personajes (pestaña Buscar)", "Riconosci i personaggi (scheda Trova)"],
         "dlg.keys.listen": ["écouter la réplique", "listen to the line", "escuchar la frase", "ascoltare la battuta"],
     ]
 }

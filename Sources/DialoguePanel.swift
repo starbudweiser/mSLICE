@@ -73,6 +73,9 @@ private struct DialogueSource: View {
                             if dialogues.hasProtagonists { Tag(text: L.t(dialogues.protagonists.count == 1 ? "dlg.who.tag1" : "dlg.who.tag", dialogues.protagonists.count), kind: .ok) }
                         }
                         Text(L.t(dialogues.hasProtagonists ? "dlg.who.note" : "dlg.who.none")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
+                        if !dialogues.hasProtagonists {
+                            Button { UserDefaults.standard.set(2, forKey: "rightTab") } label: { Text(L.t("dlg.who.open")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton()).padding(.top, 2)
+                        }
                     }
                     if let f = dialogues.failure {
                         Text(L.t(f)).font(.system(size: 11.5)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4)
@@ -196,7 +199,7 @@ private struct DialogueList: View {
                     HStack(spacing: 5) {
                         Button { dialogues.filter = nil } label: { Chip(text: L.t("dlg.who.all"), on: dialogues.filter == nil) }.buttonStyle(.plain)
                         ForEach(dialogues.speakerNames, id: \.name) { s in
-                            Button { dialogues.filter = dialogues.filter == s.name ? nil : s.name } label: { Chip(text: "\(s.name) · \(s.count)", on: dialogues.filter == s.name) }.buttonStyle(.plain)
+                            Button { dialogues.filter = dialogues.filter == s.name ? nil : s.name } label: { SpeakerChip(dialogues: dialogues, name: s.name, count: s.count, on: dialogues.filter == s.name) }.buttonStyle(.plain)
                         }
                     }
                 }
@@ -218,7 +221,10 @@ private struct DialogueList: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(Fmt.time(l.start)).font(.system(size: 10.5, weight: .medium).monospacedDigit()).foregroundStyle(Theme.text2).frame(width: 44, alignment: .leading)
                 VStack(alignment: .leading, spacing: 3) {
-                    if let n = dialogues.displayName(l) { Tag(text: n, kind: dialogues.isNamed(l) ? .accent : .plain) } else { Tag(text: L.t("dlg.who.unknown"), kind: .warn) }
+                    if let n = dialogues.displayName(l) {
+                        HStack(spacing: 5) { Circle().fill(dialogues.color(named: n)).frame(width: 8, height: 8); Text(n).font(.system(size: 10.5, weight: .semibold)).lineLimit(1) }
+                            .padding(.horizontal, 8).frame(height: 18).background(Theme.ctl, in: Capsule())
+                    } else { Tag(text: L.t("dlg.who.unknown"), kind: .warn) }
                     if editing { editor(l) } else {
                         Text(l.text).font(.system(size: 12.5)).foregroundStyle(l.discarded ? Theme.text2 : Theme.text)
                             .strikethrough(l.discarded).fixedSize(horizontal: false, vertical: true)
@@ -293,6 +299,26 @@ private struct DialogueList: View {
                 .buttonStyle(CastButton()).disabled(true).opacity(0.45)
             Text(L.t("dlg.send.soon")).font(.system(size: 10.5)).foregroundStyle(Theme.text2).multilineTextAlignment(.center)
             HStack(spacing: 5) { Key("Espace"); Text(L.t("dlg.keys.listen")).font(.system(size: 10.5)).foregroundStyle(Theme.text2) }
+        }
+    }
+}
+
+/// Pastille de filtre d'un personnage : vignette de son visage (ou pastille de couleur), nom, nombre de répliques.
+private struct SpeakerChip: View {
+    @ObservedObject var dialogues: DialogueModel
+    let name: String, count: Int, on: Bool
+    @State private var image: NSImage?
+    var body: some View {
+        HStack(spacing: 5) {
+            if let image { Image(nsImage: image).resizable().scaledToFill().frame(width: 16, height: 16).clipShape(Circle()).overlay(Circle().strokeBorder(dialogues.color(named: name), lineWidth: 1.5)) }
+            else { Circle().fill(dialogues.color(named: name)).frame(width: 8, height: 8) }
+            Text("\(name) · \(count)").lineLimit(1)
+        }
+        .font(.system(size: 11.5, weight: on ? .semibold : .regular))
+        .padding(.horizontal, 10).frame(height: 24)
+        .foregroundStyle(on ? Theme.onAccent : Theme.text).background(on ? Theme.accent : Theme.ctl, in: Capsule())
+        .task(id: name) {
+            if let person = dialogues.protagonist(named: name)?.person { image = await dialogues.doc.find.avatar(person) }
         }
     }
 }

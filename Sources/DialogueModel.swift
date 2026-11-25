@@ -76,7 +76,33 @@ final class DialogueModel: ObservableObject {
     }
 
     func setSpeaker(_ id: UUID, protagonist: String?) { mutate { $0.setSpeaker(id, speaker: protagonist, name: nil) } }
-    func setName(_ id: UUID, _ name: String) { mutate { $0.setSpeaker(id, speaker: nil, name: name) } }
+    /// Nom tapé pour une réplique : si elle est attribuée à un protagoniste, c'est lui qui est renommé (même nom partout, onglet Trouver compris) ;
+    /// sinon c'est un nom libre gardé dans la réplique.
+    func setName(_ id: UUID, _ name: String) {
+        let n = DialogueText.sanitize(name)
+        guard !n.isEmpty else { return }
+        if let l = data?.lines.first(where: { $0.id == id }), let sp = l.speaker, let p = doc.find.protagonist(sp) {
+            if let person = p.person { doc.find.rename(person, to: n) }
+            if let voice = p.voice { doc.find.renameVoice(voice, to: n) }
+            mutate { if let i = $0.lines.firstIndex(where: { $0.id == id }) { $0.lines[i].manual = true } }
+            return
+        }
+        mutate { $0.setSpeaker(id, speaker: nil, name: n) }
+    }
+
+    /// Couleur d'un personnage : la même sur la pastille, la pastille de filtre et la piste sous la timeline (selon l'ordre de première réplique).
+    static let palette: [NSColor] = [0xf08a52, 0x0a84ff, 0x30d158, 0xbf5af2, 0xff375f, 0xffd60a, 0x64d2ff, 0xac8e68].map { Theme.rgb($0) }
+    func nsColor(_ l: DialogueLine) -> NSColor {
+        guard let n = displayName(l) else { return Theme.text2NS }
+        return nsColor(named: n)
+    }
+    func nsColor(named n: String) -> NSColor {
+        var order: [String] = []
+        for l in data?.lines ?? [] { if let x = displayName(l), !order.contains(x) { order.append(x) } }
+        return Self.palette[(order.firstIndex(of: n) ?? 0) % Self.palette.count]
+    }
+    func color(named n: String) -> Color { Color(nsColor: nsColor(named: n)) }
+    func protagonist(named n: String) -> Protagonist? { protagonists.first { $0.title == n } }
 
     // MARK: Piste et liste
 

@@ -195,7 +195,7 @@ final class TimelineView: NSView {
             }
         }
 
-        // Piste « Dialogues » : un trait par réplique (vert), les écartées en gris, la réplique choisie cerclée
+        // Piste « Dialogues » : un trait par réplique, de la couleur de son personnage, les écartées en gris, la réplique choisie cerclée
         if let dl = doc?.dialogues, dl.laneVisible {
             let laneY = dialogueLaneY
             let laneRect = CGRect(x: 0, y: laneY, width: w, height: TimelineView.laneH)
@@ -204,7 +204,7 @@ final class TimelineView: NSView {
             ctx.saveGState(); ctx.addPath(CGPath(roundedRect: laneRect, cornerWidth: 4, cornerHeight: 4, transform: nil)); ctx.clip()
             for l in dl.lane where l.end >= t0 && l.start <= t1 {
                 let r = CGRect(x: x(l.start), y: laneY + 3, width: max(x(l.end) - x(l.start) - 1, 2), height: TimelineView.laneH - 6)
-                ctx.setFillColor(l.discarded ? text2.withAlphaComponent(0.35).cgColor : Theme.okNS.cgColor)
+                ctx.setFillColor(l.discarded ? text2.withAlphaComponent(0.35).cgColor : dl.nsColor(l).cgColor)
                 ctx.addPath(CGPath(roundedRect: r, cornerWidth: 2, cornerHeight: 2, transform: nil)); ctx.fillPath()
                 if l.id == dl.selected { ctx.setStrokeColor(Theme.textNS.cgColor); ctx.setLineWidth(1.5); ctx.addPath(CGPath(roundedRect: r.insetBy(dx: -1, dy: -1.5), cornerWidth: 3, cornerHeight: 3, transform: nil)); ctx.strokePath() }
             }
