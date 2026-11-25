@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>mSLICE — Maquette Dialogues (Flat Mat)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.4 -apple-system,"SF Pro Text",system-ui,sans-serif;background:#0b0b0d;color:#eee;-webkit-font-smoothing:antialiased}
+.top{padding:18px 28px 6px;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.top h1{font-size:20px;font-weight:700}.top .sub0{color:#999}
+.tabs{display:flex;gap:6px;padding:10px 28px;flex-wrap:wrap;align-items:center}
+.tabs button{background:#222;color:#eee;border:0;padding:8px 16px;border-radius:999px;font:inherit;font-weight:500;cursor:pointer}
+.tabs button.on{background:#ffd21e;color:#222}
+.tabs .sep{width:18px}
+.legend{color:#aaa;padding:0 28px 12px;max-width:1200px;line-height:1.5}
+.legend b{color:#fff}
+.stage{padding:6px 28px 40px}
+
+/* ---------- jetons Flat Mat (identiques à l'appli, Theme.swift) ---------- */
+.win{--rw:12px;--rb:12px;--rc:8px;--rch:999px;--ph:#ff453a;--sand:#e8a257}
+.win[data-th=sombre]{--bg:#131316;--card:#1c1c1f;--ctl:#2c2c31;--t:#f5f5f7;--t2:#98989f;--acc:#0a84ff;--onacc:#fff;--m:#f08a52;--seg:#f08a52;--ok:#30d158;--warn:#ff9f0a;--line:#303035;--dim:rgba(28,28,31,.68);--sh:0 18px 50px rgba(0,0,0,.5)}
+.win[data-th=clair]{--bg:#f4f1ec;--card:#fff;--ctl:#ebe6de;--t:#26231e;--t2:#7b756a;--acc:#26231e;--onacc:#f4f1ec;--m:#d9622b;--seg:#d9622b;--ok:#3f8f5a;--warn:#b7791f;--line:#e3ddd2;--dim:rgba(255,255,255,.68);--sh:0 18px 50px rgba(60,40,10,.18)}
+
+/* ---------- fenêtre ---------- */
+.win{width:1200px;height:800px;display:grid;grid-template-columns:232px 1fr 304px;grid-template-rows:auto 1fr;overflow:hidden;position:relative;
+ background:var(--bg);color:var(--t);border-radius:var(--rw);box-shadow:var(--sh);font-size:12.5px}
+.bar{grid-column:1/4;display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:7px}.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.brand{font-weight:700;font-size:15px;margin-left:8px}.brand b{color:var(--m)}
+.finfo{margin-left:14px;color:var(--t2);font-size:12px;white-space:nowrap}.finfo b{color:var(--t);font-weight:600}
+.bar .r{margin-left:auto;display:flex;gap:8px}
+.btn{background:var(--ctl);color:var(--t);border:0;height:30px;padding:0 12px;border-radius:var(--rc);font:inherit;font-weight:500;white-space:nowrap;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.btn.pri{background:var(--acc);color:var(--onacc);font-weight:600}
+.btn.wide{width:100%}
+.btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.h{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--t2)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--rb);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.hh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.sub{color:var(--t2);font-size:11.5px}
+.tag{font-size:10.5px;font-weight:600;padding:0 8px;height:18px;line-height:18px;border-radius:var(--rch);background:var(--ctl);color:var(--t2);white-space:nowrap;display:inline-block}
+.tag.ok{background:color-mix(in srgb,var(--ok) 22%,transparent);color:var(--ok)}
+.tag.ver{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--t2)}
+kbd{font:600 11px ui-monospace,Menlo,monospace;background:var(--ctl);border:1px solid color-mix(in srgb,var(--t) 16%,transparent);border-radius:5px;padding:1px 6px;color:var(--t);min-width:20px;text-align:center;display:inline-block}
+.sw{width:34px;height:20px;border-radius:99px;background:var(--ctl);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.sw.on{background:var(--acc)}.sw.on::after{left:16px}
+.seg3{display:flex;background:var(--ctl);border-radius:var(--rch);padding:3px;gap:2px;flex:none}
+.seg3 span{flex:1;min-width:0;text-align:center;height:26px;line-height:26px;border-radius:var(--rch);color:var(--t2);font-weight:600;font-size:12px;white-space:nowrap}
+.seg3 span.on{background:var(--acc);color:var(--onacc)}
+
+/* ---------- gauche ---------- */
+.side{padding:14px 12px;display:flex;flex-direction:column;gap:6px;border-right:1px solid var(--line);overflow:hidden}
+.side .h{padding:0 4px 4px}
+.file{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:8px;border-radius:var(--rc);min-width:0}
+.file.on{background:var(--ctl)}
+.fi{width:34px;height:34px;border-radius:var(--rc);display:grid;place-items:center;font-weight:700;font-size:9.5px;background:var(--ctl);color:var(--t)}
+.file.on .fi{background:var(--card)}
+.fn{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs{color:var(--t2);font-size:11.5px;white-space:nowrap;margin-top:2px}
+.drop{margin-top:auto;border:1.5px dashed color-mix(in srgb,var(--t) 28%,transparent);border-radius:var(--rb);padding:14px 12px;text-align:center;color:var(--t2);font-size:11.5px;display:flex;flex-direction:column;gap:6px}
+.drop b{color:var(--t);font-size:12.5px}
+
+/* ---------- centre ---------- */
+.main{padding:14px;display:flex;flex-direction:column;gap:10px;overflow:hidden;min-width:0}
+.pv{flex:1;min-height:0;background:#0c0c0e;border-radius:var(--rb);display:grid;place-items:center;overflow:hidden;position:relative}
+.pv img{height:100%;max-width:100%;object-fit:contain;display:block}
+.ov{position:absolute;background:rgba(0,0,0,.58);color:#fff;font-size:11.5px;padding:3px 10px;border-radius:var(--rch);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ov.a{left:12px;top:12px}.ov.c{left:12px;bottom:12px;font:600 13px ui-monospace,Menlo,monospace}.ov.d{right:12px;bottom:12px}
+.tr{display:flex;align-items:center;gap:8px;height:42px;flex:none}
+.tc{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;margin-right:6px}.tc small{font-size:12px;color:var(--t2);font-weight:500}
+.tb{width:34px;height:34px;border-radius:var(--rc);background:var(--ctl);display:grid;place-items:center;color:var(--t)}
+.tb.p{background:var(--acc);color:var(--onacc);width:42px}
+.tb svg{width:13px;height:13px;fill:currentColor}
+.scal{margin-left:auto;display:flex;gap:8px}
+.scal .btn{height:34px;padding:0 12px 0 9px;gap:8px}
+.scal .btn svg{width:16px;height:16px}
+.tw{background:var(--card);border:1px solid var(--line);border-radius:var(--rb);padding:10px 12px 8px;position:relative;flex:none}
+.th{display:flex;align-items:center;gap:8px;height:26px;margin-bottom:4px}
+.th .chip{padding:0 10px;height:24px;line-height:24px;border-radius:var(--rch);background:var(--ctl);font-size:11.5px;white-space:nowrap}
+.th .chip.on{background:var(--acc);color:var(--onacc);font-weight:600}
+.slid{width:86px;height:5px;border-radius:9px;background:var(--ctl);position:relative}.slid i{position:absolute;left:0;top:0;bottom:0;width:8%;background:var(--acc);border-radius:inherit}.slid u{position:absolute;left:8%;top:50%;width:13px;height:13px;margin:-6.5px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.rul{height:22px;position:relative}
+.rul .kt{position:absolute;bottom:0;width:1px;height:5px;background:var(--t2);opacity:.45}.rul .kt.mj{height:9px;opacity:.9}
+.rul .lb{position:absolute;top:0;font-size:10.5px;color:var(--t2);transform:translateX(-50%);font-variant-numeric:tabular-nums}
+.body{position:relative;display:flex;flex-direction:column;gap:4px}
+.film{display:flex;gap:1px;height:40px;border-radius:5px;overflow:hidden}.film img{flex:1;min-width:0;height:100%;object-fit:cover}
+.wv{display:flex;align-items:center;gap:1px;height:70px;background:color-mix(in srgb,var(--t) 5%,transparent);border-radius:5px}
+.wv i{flex:1;border-radius:1px;background:var(--t2);opacity:.45}
+.lane{position:relative;height:14px;border-radius:4px;background:color-mix(in srgb,var(--t) 5%,transparent);display:none}
+.win[data-s=resultats] .lane,.win[data-s=choix] .lane,.win[data-s=ajoutes] .lane{display:block}
+.lane i{position:absolute;top:3px;bottom:3px;min-width:2px;border-radius:2px;background:var(--acc)}
+.lane i.off{background:var(--t2);opacity:.35}
+.lane-lb{position:absolute;right:6px;top:0;font-size:9.5px;line-height:14px;color:var(--t2);font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+.sgx{position:absolute;top:0;bottom:0;border-radius:4px;background:color-mix(in srgb,var(--seg) 14%,transparent);box-shadow:inset 0 0 0 1.5px var(--seg);display:none}
+.win[data-s=ajoutes] .sgx{display:block}
+.ph{position:absolute;top:-14px;bottom:0;width:2px;margin-left:-1px;background:var(--ph);z-index:3}
+.ph span{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--ph);color:#fff;font:600 10.5px ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:5px;white-space:nowrap}
+.keys{display:flex;gap:10px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,var(--t) 10%,transparent);color:var(--t2);font-size:10.5px;white-space:nowrap;overflow:hidden}
+.keys span{display:inline-flex;gap:5px;align-items:center}
+
+/* ---------- droite : onglet Trouver ---------- */
+.right{padding:14px 14px 14px 0;display:flex;flex-direction:column;gap:10px;overflow:hidden;min-width:0}
+.scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.pane{display:none;flex-direction:column;gap:10px;flex:1;min-height:0}
+.win[data-s=avant] .p-avant,.win[data-s=analyse] .p-analyse,.win[data-s=resultats] .p-res,.win[data-s=choix] .p-choix,.win[data-s=ajoutes] .p-ajoutes,.win[data-s=ajoutes] .p-res{display:flex}
+.p-avant,.p-analyse{justify-content:center}   /* carte seule : centrée dans sa zone (Socle) */
+.p-ajoutes{flex:none}
+.okrow{display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:center}
+.okrow .big{width:32px;height:32px}.okrow .big svg{width:16px;height:16px}
+.center{text-align:center;align-items:center}
+.lead{font-size:13px;font-weight:600}
+.big{width:44px;height:44px;border-radius:50%;background:var(--ctl);display:grid;place-items:center;color:var(--t2)}
+.big svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.facts{display:flex;flex-direction:column;gap:5px;width:100%;text-align:left}
+.facts div{display:grid;grid-template-columns:16px 1fr;gap:8px;align-items:start;color:var(--t2);font-size:11.5px}
+.facts svg,.ic{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;margin-top:1px;flex:none}
+.prog{height:6px;border-radius:9px;background:var(--ctl);overflow:hidden;width:100%}.prog i{display:block;height:100%;background:var(--acc);border-radius:inherit}
+.steps{display:flex;flex-direction:column;gap:6px;width:100%}
+.step{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;font-size:12px}
+.step .v{color:var(--t2);font-variant-numeric:tabular-nums;font-size:11.5px}
+.step.done svg{color:var(--ok)}.step.wait{color:var(--t2)}
+.search{display:flex;align-items:center;gap:8px;background:var(--ctl);border-radius:0;height:34px;padding:0 10px;color:var(--t2);font-size:12px}
+.search svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
+.search span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11.5px;color:var(--t2)}
+.dl .btn{height:24px;font-size:11.5px;padding:0 10px}
+.avs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 6px}
+.av{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border-radius:var(--rc);min-width:0;cursor:pointer}
+.av img{width:54px;height:54px;border-radius:50%;object-fit:cover;display:block;box-shadow:0 0 0 1px var(--line)}
+.av.on{background:var(--ctl)}.av.on img{box-shadow:0 0 0 2px var(--acc)}
+.av .n{font-weight:600;font-size:11.5px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.av .n.unnamed{color:var(--t2);font-weight:500}
+.av .m{color:var(--t2);font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rows{display:flex;flex-direction:column;gap:2px}
+.row{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;padding:6px 8px;border-radius:var(--rc);min-width:0}
+.row.on{background:var(--ctl)}
+.row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .val{color:var(--t2);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row.on .val{color:var(--t)}
+.none{color:var(--t2);font-size:11px;line-height:1.4;padding:2px 8px 0}
+.flt{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 4px;border-radius:var(--rch);background:var(--ctl);font-size:12px;font-weight:600;white-space:nowrap}
+.pill img{width:18px;height:18px;border-radius:50%;object-fit:cover}
+.pill .x{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;color:var(--t2)}
+.pill .x svg{width:8px;height:8px;stroke:currentColor;stroke-width:2.4}
+.pill .ic{margin:0 0 0 4px}
+.op{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--t2);padding:0 2px}
+.opt{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.pas{display:flex;flex-direction:column;gap:4px}
+.pa{display:grid;grid-template-columns:16px 64px 1fr;gap:8px;align-items:center;padding:4px;border-radius:var(--rc)}
+.pa img{width:64px;height:36px;object-fit:cover;border-radius:4px;display:block}
+.pa .tm{font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;white-space:nowrap}
+.pa .tm small{display:block;color:var(--t2);font-weight:500;font-size:11px}
+.ck{width:14px;height:14px;border-radius:4px;background:var(--acc);display:grid;place-items:center}
+.ck svg{width:9px;height:9px;stroke:var(--onacc);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ck.no{background:transparent;box-shadow:inset 0 0 0 1.5px var(--t2)}.ck.no svg{display:none}
+.pa.out{opacity:.5}
+.foot{display:flex;flex-direction:column;gap:8px;flex:none}
+.sumline{display:flex;justify-content:space-between;align-items:baseline;font-size:12px}
+.sumline b{font-variant-numeric:tabular-nums}
+.okbox{display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center}
+.okbox .big{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
+
+.go{height:42px;font-size:13.5px;background:var(--sand);color:#2a1d0c;font-weight:600}
+/* ---------- ajouts : protagonistes ---------- */
+.win{grid-template-columns:200px 1fr 320px}
+.pv .ph2{position:absolute;inset:0;display:grid;place-items:center}
+.pv img.sc{height:100%}
+.lanes{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+.ln{display:grid;grid-template-columns:92px 1fr;gap:8px;align-items:center;height:24px}
+.ln .who{font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;gap:6px;align-items:center}
+.ln .who i{width:8px;height:8px;border-radius:50%;flex:none}
+.ln .tk{position:relative;height:100%;border-radius:4px;background:color-mix(in srgb,var(--t) 5%,transparent)}
+.ln .tk b{position:absolute;top:3px;height:8px;border-radius:2px;opacity:.95}
+.ln .tk em{position:absolute;top:13px;height:5px;border-radius:2px;opacity:.65}
+.ln.off{opacity:.3}
+.legk{display:flex;gap:14px;color:var(--t2);font-size:10.5px;margin-top:4px;padding-left:100px}
+.legk span{display:inline-flex;gap:5px;align-items:center}
+.legk b{width:14px;height:6px;border-radius:2px;background:var(--t2)}.legk em{width:14px;height:3px;border-radius:2px;background:var(--t2);opacity:.6}
+.sgx2{position:absolute;top:0;bottom:0;border-radius:3px;box-shadow:inset 0 0 0 1.5px var(--seg);background:color-mix(in srgb,var(--seg) 14%,transparent);pointer-events:none}
+.pp{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:7px 8px;border-radius:var(--rc);cursor:pointer}
+.pp.on{background:var(--ctl)}
+.pp img{width:44px;height:44px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px var(--c,var(--line))}
+.pp .nm{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp .nm.un{color:var(--t2);font-weight:500}
+.pp .st{color:var(--t2);font-size:11px;margin-top:2px;white-space:nowrap}
+.pp .ck{flex:none}
+.sug{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:center}
+.sug .pair{display:flex}.sug .pair img{width:26px;height:26px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px var(--card)}.sug .pair img+img{margin-left:-8px}
+.sug .t{font-size:11.5px;line-height:1.4}
+.btnrow{display:flex;gap:6px}
+.btnrow .btn{height:26px;font-size:11.5px;padding:0 10px}
+.opt2{display:flex;flex-direction:column;gap:6px}
+.fl{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--t2)}
+.fl div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:grid;grid-template-columns:14px 1fr;gap:6px}
+.vwave{display:flex;align-items:center;gap:1px;height:170px;border-radius:var(--rb);background:var(--card);border:1px solid var(--line);padding:0 10px;position:relative;flex:none}
+.vwave i{flex:1;border-radius:1px;min-width:1px}
+.pane{display:none}
+.win[data-s="modeles"] .p-modeles,.win[data-s="liste"] .p-liste,.win[data-s="export"] .p-export,.win[data-s="audio"] .p-audio{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}
+.vonly{display:none}.win[data-s="audio"] .vonly{display:block}.win[data-s="audio"] .vid{display:none}
+.mdl{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:center}
+/* ---------- ajouts : dialogues ---------- */
+.seg3.t4 span{font-size:11.5px}
+.win[data-s="source"] .p-source,.win[data-s="extraction"] .p-extraction,.win[data-s="repliques"] .p-repliques,.win[data-s="corriger"] .p-repliques,.win[data-s="envoi"] .p-envoi,.win[data-s="envoye"] .p-envoye{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}
+.p-source,.p-extraction,.p-envoye{justify-content:center}
+.src{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;padding:7px 8px;border-radius:var(--rc);font-size:12px}
+.src.on{background:var(--ctl)}.src.dis{color:var(--t2)}
+.src .rad{width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--t2)}
+.src.on .rad{box-shadow:inset 0 0 0 4px var(--acc)}
+.src .sv{color:var(--t2);font-size:11px;white-space:nowrap}
+.lines{display:flex;flex-direction:column;gap:2px}
+.li{display:grid;grid-template-columns:22px 1fr;gap:8px;padding:6px 6px;border-radius:var(--rc);align-items:start}
+.li.on{background:var(--ctl)}
+.li.out{opacity:.45}
+.li .pl{width:22px;height:22px;border-radius:50%;background:var(--ctl);display:grid;place-items:center;color:var(--t);margin-top:1px}
+.li.on .pl{background:var(--card)}
+.li .pl svg{width:8px;height:8px;fill:currentColor}
+.li .meta{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--t2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.li .meta .who{display:inline-flex;gap:5px;align-items:center;font-weight:600;color:var(--t)}
+.li .meta .who i{width:8px;height:8px;border-radius:50%}
+.li .meta .who.un{color:var(--t2);font-weight:500}
+.li .tx{font-size:12px;line-height:1.38;margin-top:2px}
+.li .warn{color:var(--warn);font-size:10.5px;font-weight:600}
+.edit{background:var(--card);border-radius:var(--rc);padding:8px;display:flex;flex-direction:column;gap:6px;margin-top:4px;box-shadow:inset 0 0 0 1.5px var(--acc)}
+.edit .fld{background:var(--ctl);border-radius:6px;padding:6px 8px;font-size:12px;line-height:1.38}
+.edit .fld u{text-decoration:none;background:color-mix(in srgb,var(--acc) 30%,transparent);border-radius:3px;padding:0 2px}
+.edit .r2{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.edit .r2 .btn{height:24px;font-size:11.5px;padding:0 9px}
+.menu{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px;background:var(--ctl);font-size:11.5px;font-weight:600}
+.menu i{width:8px;height:8px;border-radius:50%}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chp{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 4px;border-radius:var(--rch);background:var(--ctl);font-size:11.5px;font-weight:600;white-space:nowrap}
+.chp img{width:16px;height:16px;border-radius:50%;object-fit:cover}
+.chp.on{box-shadow:inset 0 0 0 1.5px var(--acc)}
+.chp.all{padding:0 10px}
+.chp small{color:var(--t2);font-weight:500}
+.cast{background:#16a34a;color:#fff;font-weight:600;height:40px;font-size:13px}
+.field{display:grid;grid-template-columns:86px 1fr;gap:8px;align-items:center;font-size:12px}
+.field .v{background:var(--ctl);border-radius:6px;height:26px;line-height:26px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.map{display:grid;grid-template-columns:22px 1fr 1fr;gap:6px 8px;align-items:center;font-size:12px}
+.map img{width:22px;height:22px;border-radius:50%;object-fit:cover}
+.map .bub{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--ctl)}
+.map .v{background:var(--ctl);border-radius:6px;height:24px;line-height:24px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.map .v.ph0{color:var(--t2)}
+.dlane .tk b{top:4px;height:12px;border-radius:3px}
+.dlane .tk b.sel{box-shadow:0 0 0 2px var(--t)}
+.dlane{height:22px}
+</style></head><body>
+
+<div class="top"><h1>mSLICE — Dialogues (répliques vers mCASTING)</h1><span class="sub0">Maquette Flat Mat · vrai contenu : « Top 5 des répliques cultes de Dustin » (1:01), texte transcrit réellement</span></div>
+<div class="tabs" id="states">
+  <button data-s="source">1. Source du texte</button>
+  <button data-s="extraction">2. Extraction</button>
+  <button data-s="repliques" class="on">3. Répliques</button>
+  <button data-s="corriger">4. Corriger une réplique</button>
+  <button data-s="envoi">5. Envoyer à mCASTING</button>
+  <button data-s="envoye">6. Envoyé</button>
+  <span class="sep"></span>
+  <button data-th="sombre" class="on">Sombre</button>
+  <button data-th="clair">Clair</button>
+</div>
+<p class="legend" id="leg"></p>
+
+<div class="stage">
+<div class="win" id="win" data-th="sombre" data-s="repliques">
+  <div class="bar">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="brand"><b>m</b>SLICE</div>
+    <div class="finfo"><b>Top 5 des répliques cultes de Dustin.mp4</b> · 1080×1920 · H.264 · 30 i/s · AAC stéréo · 1:00.9 · 13 Mo</div>
+    <div class="r"><span class="btn">Raccourcis <kbd>⌘/</kbd></span></div>
+  </div>
+
+  <aside class="side">
+    <div class="h">Fichiers ouverts · 1</div>
+    <div class="file on"><div class="fi">MP4</div><div style="min-width:0"><div class="fn">Top 5 des répliques cultes de Dustin.mp4</div><div class="fs">1:01 · 13 Mo</div></div></div>
+    <div class="drop"><b>Déposez des fichiers ici</b><span>ou clic droit dans le Finder</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="pv"><img class="sc" src="assets-protagonistes/ecran.jpg" alt=""><span class="ov a">Top 5 des répliques cultes de Dustin.mp4</span><span class="ov c" id="tcode">0:22.1</span><span class="ov d">image 663 · 30 i/s</span></div>
+    <div class="tw">
+      <div class="th"><span class="sub">Zoom</span><div class="slid"><i></i><u></u></div><span class="sub">1×</span><span class="chip on">Aimant : images clés</span><span class="chip">Piste : dialogues</span></div>
+      <div class="rul" id="rul"></div>
+      <div class="body" id="tl">
+        <div class="film" id="film"></div>
+        <div class="wv" id="wv" style="height:46px"></div>
+        <div class="lanes" id="lanes"></div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="right">
+    <div class="seg3 t4"><span>Édition</span><span>Trouver</span><span class="on">Dialogues</span><span>Agent</span></div>
+
+    <!-- 1. source -->
+    <div class="pane p-source">
+      <div class="card">
+        <div class="hh"><span class="h">Texte des répliques</span></div>
+        <div class="src dis"><span class="rad"></span><span>Sous-titres intégrés</span><span class="sv">aucun</span></div>
+        <div class="src dis"><span class="rad"></span><span>Fichier .srt à côté</span><span class="sv">aucun</span></div>
+        <div class="src on"><span class="rad"></span><span>Transcrire avec macOS</span><span class="sv">Français ▾</span></div>
+        <div class="sub" style="line-height:1.45">Pas de sous-titres dans ce fichier : mSLICE écoute la parole et l'écrit, sur ce Mac (reconnaissance vocale de macOS, rien n'est envoyé).</div>
+      </div>
+      <div class="card">
+        <div class="hh"><span class="h">Qui parle</span><span class="tag ok">3 protagonistes</span></div>
+        <div class="sub" style="line-height:1.45">D'après les protagonistes déjà reconnus (visage + voix). Les noms écrits dans les sous-titres (« STEVE : … ») passent avant.</div>
+      </div>
+      <div class="card">
+        <div class="hh"><span class="h">Audio des répliques</span></div>
+        <div class="opt"><span>Voix seule (retirer musique et bruits)</span><span class="sw on"></span></div>
+        <div class="opt" style="color:var(--t2)"><span>Piste du centre (5.1)</span><span class="sub">fichier stéréo</span></div>
+        <div class="sub" style="font-size:11px">Isolation de la voix de macOS, comme dans Final Cut Pro. Rien à télécharger.</div>
+      </div>
+      <div class="foot"><span class="btn pri wide" style="height:36px">Extraire les répliques</span><div class="sub" style="text-align:center">Environ 5 s par minute de vidéo.</div></div>
+    </div>
+
+    <!-- 2. extraction -->
+    <div class="pane p-extraction">
+      <div class="card center">
+        <div class="lead">Extraction des répliques…</div>
+        <div class="prog"><i style="width:64%"></i></div>
+        <div class="steps">
+          <div class="step done"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Parole repérée</span><span class="v">13 passages</span></div>
+          <div class="step done"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Transcription</span><span class="v">0:42 / 1:01</span></div>
+          <div class="step"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg><span>Découpage en répliques</span><span class="v">en cours</span></div>
+          <div class="step wait"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg><span>Qui parle</span><span class="v"></span></div>
+          <div class="step wait"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg><span>Voix seule</span><span class="v">à l'envoi</span></div>
+        </div>
+        <span class="btn">Annuler</span>
+      </div>
+    </div>
+
+    <!-- 3 / 4. répliques -->
+    <div class="pane p-repliques">
+      <div class="card" style="flex:none">
+        <div class="hh"><span class="h">Répliques · 13</span><span class="sub" id="selinfo"></span></div>
+        <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><span>Chercher dans le texte</span></div>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="scroll" style="flex:1;min-height:0"><div class="lines" id="lines"></div></div>
+      <div class="foot">
+        <span class="btn wide cast" id="castbtn"></span>
+        <div style="display:flex;gap:6px"><span class="btn" style="flex:1;min-width:0;padding:0 6px;font-size:11.5px">Ajouter aux morceaux</span><span class="btn" style="flex:1;min-width:0;padding:0 6px;font-size:11.5px">Exporter WAV + SRT</span></div>
+      </div>
+    </div>
+
+    <!-- 5. envoi -->
+    <div class="pane p-envoi">
+      <div class="scroll" style="flex:1;min-height:0">
+        <div class="card">
+          <div class="hh"><span class="h">Source</span></div>
+          <div class="seg3"><span class="on">Série</span><span>Film</span><span>Autre</span></div>
+          <div class="field"><span class="sub">Titre</span><span class="v">Stranger Things</span></div>
+          <div class="field"><span class="sub">Épisode</span><span class="v">Saison 4 · extraits</span></div>
+          <div class="field"><span class="sub">Langue</span><span class="v">Français (doublage)</span></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Personnages</span><span class="sub">noms dans mCASTING</span></div>
+          <div class="map" id="map"></div>
+        </div>
+        <div class="card">
+          <div class="hh"><span class="h">Contenu</span></div>
+          <div class="opt"><span>Audio de chaque réplique</span><span class="sw on"></span></div>
+          <div class="opt"><span>Voix seule</span><span class="sw on"></span></div>
+          <div class="opt"><span>Étiquettes automatiques (ton, émotion)</span><span class="sw on"></span></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn wide cast">Envoyer 12 répliques à mCASTING</span><span class="btn wide">Annuler</span></div>
+    </div>
+
+    <!-- 6. envoyé -->
+    <div class="pane p-envoye">
+      <div class="card okbox">
+        <div class="big"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+        <div class="lead">12 répliques envoyées à mCASTING</div>
+        <div class="sub">Stranger Things · Saison 4 · extraits — Dustin 7, Steve 4, Nancy 1. Elles apparaissent dans l'écran « Répliques » de mCASTING.</div>
+        <div class="btnrow"><span class="btn pri">Ouvrir mCASTING</span><span class="btn">Terminé</span></div>
+      </div>
+    </div>
+  </aside>
+</div>
+</div>
+
+<script>
+const D=60.9;
+const P={dustin:{name:'Dustin',col:'#ff9f0a',img:'dustin'},steve:{name:'Steve',col:'#0a84ff',img:'steve'},vert:{name:'',col:'#30d158',img:'p3'}};
+// Texte : transcription réelle de la vidéo (corrections visibles dans l'état 4). Attribution : illustrative.
+const LINES=[
+ [0.0,3.5,'vert',"Je pensais avoir été clair quand je t'ai dit que je voulais pas te voir avec ce t-shirt."],
+ [3.5,6.7,'dustin',"Ouais mais tu m'as aussi dit d'arrêter de niquer ta mère et ça m'en a pas empêché."],
+ [8.98,14.06,'dustin',"Allez, lentez. Il reste une part si tu veux. Tant qu'il ne peut pas rôner.",'à vérifier'],
+ [14.06,14.74,'dustin',"Attends."],
+ [22.08,26.52,'dustin',"C'est bon, elle est entrée. Il me manque une clavicule, pas des vieux."],
+ [28.94,34.62,'steve',"Henderson, compris ? Je veux pas la voir à la morgue les yeux arrachés de son crâne par ce gros malade de Vecna le démon."],
+ [34.62,36.98,'steve',"Trop mignon, t'es tout rouge, c'est dur de voyager.",'à vérifier'],
+ [36.98,40.76,'dustin',"Non, je suis pas rouge, je veux pas en parler et arrête ou je vais te frapper si fort que tes dents vont enfin sortir."],
+ [40.76,42.76,'steve',"Woah, trop loin."],
+ [46.24,48.24,'steve',"Une vieille horloge classique."],
+ [48.24,50.52,'dustin',"C'est quoi son obsession pour les horloges ?"],
+ [51.68,55.34,'steve',"Il était peut-être horloger, ou un autre truc comme ça."],
+ [56.42,58.42,'dustin',"T'as résolu cette affaire, Steve."]];
+const mmss=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+const tc=s=>mmss(s)+'.'+Math.floor((s%1)*10);
+const pct=t=>(t/D*100).toFixed(3)+'%';
+const win=document.getElementById('win');
+const nm=k=>P[k].name||'Personnage 3';
+let filter='all',cur=4;
+
+const rul=document.getElementById('rul');
+for(let m=0;m<=60;m+=5){const k=document.createElement('i');k.className='kt mj';k.style.left=pct(m);rul.appendChild(k);const l=document.createElement('span');l.className='lb';l.style.left=pct(Math.max(m,1.5));l.textContent=mmss(m);rul.appendChild(l)}
+document.getElementById('film').innerHTML=[...Array(16).keys()].map(k=>`<img src="assets-protagonistes/film${k}.jpg" alt="">`).join('');
+let a=11;const rnd=()=>{a=(a*16807)%2147483647;return a/2147483647};
+document.getElementById('wv').innerHTML=[...Array(260).keys()].map(i=>{const t=i/260*D;const s=LINES.some(([x,y])=>t>=x&&t<=y);return `<i style="height:${(s?35+rnd()*60:8+rnd()*14).toFixed(0)}%"></i>`}).join('');
+
+function lanes(){
+  const s=win.dataset.s, show=s!=='source'&&s!=='extraction';
+  const done=s==='extraction'?LINES.filter(l=>l[1]<42):LINES;
+  document.getElementById('lanes').innerHTML=`<div class="ln dlane"><span class="who">Dialogues</span><div class="tk">${(s==='source'?[]:done).map((l,i)=>`<b class="${s==='corriger'&&i===cur?'sel':''}" style="left:${pct(l[0])};width:${pct(l[1]-l[0])};background:${s==='extraction'?'var(--t2)':P[l[2]].col};opacity:${filter==='all'||filter===l[2]?.95:.25}"></b>`).join('')}</div></div>`;
+}
+function render(){
+  const s=win.dataset.s;
+  const counts={};LINES.forEach(l=>counts[l[2]]=(counts[l[2]]||0)+1);
+  document.getElementById('chips').innerHTML=`<span class="chp all${filter==='all'?' on':''}" data-f="all">Tous <small>13</small></span>`+Object.keys(P).map(k=>`<span class="chp${filter===k?' on':''}" data-f="${k}"><img src="assets-protagonistes/${P[k].img}.png" alt="">${nm(k)} <small>${counts[k]}</small></span>`).join('');
+  document.querySelectorAll('#chips .chp').forEach(c=>c.onclick=()=>{filter=c.dataset.f;render()});
+  const play='<svg viewBox="0 0 10 10"><path d="M2 1l7 4-7 4z"/></svg>';
+  document.getElementById('lines').innerHTML=LINES.map((l,i)=>{
+    if(filter!=='all'&&filter!==l[2])return '';
+    const p=P[l[2]], on=i===cur&&(s==='corriger'||s==='repliques'), out=i===3;
+    let ed='';
+    if(s==='corriger'&&i===cur) ed=`<div class="edit"><div class="fld">C'est bon, elle est entrée. Il me manque une clavicule, pas des <u>yeux</u>.</div>
+      <div class="r2"><span class="sub">Personnage</span><span class="menu"><i style="background:${p.col}"></i>Dustin ▾</span><span class="sub" style="margin-left:auto">0:22.1 → 0:26.5</span></div>
+      <div class="r2"><span class="btn">Écouter <kbd>␣</kbd></span><span class="btn">Couper en deux</span><span class="btn">Écarter</span><span class="btn pri" style="margin-left:auto">OK <kbd>↩</kbd></span></div></div>`;
+    return `<div class="li${on?' on':''}${out?' out':''}"><span class="pl">${play}</span><div style="min-width:0"><div class="meta"><span class="who${p.name?'':' un'}"><i style="background:${p.col}"></i>${nm(l[2])}</span><span>${tc(l[0])} · ${(l[1]-l[0]).toFixed(1)} s</span>${l[4]?`<span class="warn">${l[4]}</span>`:''}${out?'<span>écartée (trop courte)</span>':''}</div>${s==='corriger'&&i===cur?'':`<div class="tx">${l[3]}</div>`}${ed}</div></div>`}).join('');
+  const n=filter==='all'?12:LINES.filter((l,i)=>l[2]===filter&&i!==3).length;
+  document.getElementById('castbtn').textContent=`Envoyer ${n} répliques à mCASTING`;
+  document.getElementById('selinfo').textContent=filter==='all'?'12 retenues · 1 écartée':`${n} de ${nm(filter)}`;
+  document.getElementById('map').innerHTML=Object.keys(P).map(k=>`<img src="assets-protagonistes/${P[k].img}.png" alt=""><span>${nm(k)}</span><span class="v${k==='vert'?'':''}">${k==='dustin'?'Dustin Henderson':k==='steve'?'Steve Harrington':'Nancy Wheeler'}</span>`).join('');
+  document.getElementById('tcode').textContent=s==='corriger'?'0:22.1':'0:22.1';
+  lanes();
+}
+const L={
+ source:"<b>Source du texte.</b> mSLICE propose dans l'ordre : sous-titres intégrés au fichier (MKV, MP4), fichier .srt / .ass / .vtt de même nom à côté, sinon <b>transcription par macOS</b> (sur ce Mac, gratuite, rien à télécharger). Qui parle : les protagonistes déjà reconnus (visage + voix), sinon les noms écrits dans les sous-titres. L'isolation de la voix est celle de macOS (Final Cut Pro) : essai à faire avant de coder.",
+ extraction:"<b>Extraction.</b> Une seule passe, dans le processus d'analyse séparé (comme Trouver) : parole, transcription, découpage aux phrases, attribution. Annulable ; résultat gardé avec l'analyse du fichier.",
+ repliques:"<b>Répliques.</b> <i>Texte réellement transcrit de la vidéo</i> (on voit les erreurs de transcription : « lentez », « rôner », « vieux » au lieu de « yeux »). Attribution illustrative. Filtre par personnage, recherche dans le texte, clic = la tête de lecture va à la réplique, <kbd>␣</kbd> l'écoute. Les répliques trop courtes ou douteuses sont signalées. Sous la timeline : une piste « Dialogues » colorée par personnage. Bouton vert = envoi à mCASTING (comme dans mTALKIE).",
+ corriger:"<b>Corriger une réplique.</b> Double-clic : le texte devient modifiable, le personnage se change par menu (ou en créant un nom), les bornes se règlent à la timeline avec les poignées habituelles ; « Couper en deux » sépare deux personnes dans une même réplique, « Écarter » la retire de l'envoi.",
+ envoi:"<b>Envoyer à mCASTING.</b> Même paquet que mTALKIE (boîte de réception de mCASTING, <code>manifest.json</code> + audio AAC), avec une source <b>série</b> ou <b>film</b>. Les noms de personnages sont retenus par titre, d'un épisode à l'autre.",
+ envoye:"<b>Envoyé.</b> mCASTING importe le paquet ; les répliques sont cherchables (texte, personnage, source) et attribuables aux personnages des projets."};
+function setS(s){win.dataset.s=s;document.querySelectorAll('#states button[data-s]').forEach(b=>b.classList.toggle('on',b.dataset.s===s));document.getElementById('leg').innerHTML=L[s];if(s==='corriger')filter='all';render()}
+function setT(t){win.dataset.th=t;document.querySelectorAll('#states button[data-th]').forEach(b=>b.classList.toggle('on',b.dataset.th===t))}
+document.querySelectorAll('#states button').forEach(b=>b.onclick=()=>b.dataset.s?setS(b.dataset.s):setT(b.dataset.th));
+setS('repliques');
+window.auditTrouver=function(){
+  const out=[];
+  win.querySelectorAll('.card,.tw').forEach(c=>{if(!c.offsetParent)return;const cr=c.getBoundingClientRect();
+    c.querySelectorAll('*').forEach(e=>{if(!e.offsetParent)return;const r=e.getBoundingClientRect();if(r.width===0)return;
+      const sc=e.closest('.scroll');if(sc){const sr=sc.getBoundingClientRect();if(r.bottom<sr.top||r.top>sr.bottom)return}
+      if(r.left<cr.left+1-0.5||r.right>cr.right-1+0.5)out.push(`déborde : ${e.className||e.tagName} « ${(e.textContent||'').trim().slice(0,30)} »`)})});
+  win.querySelectorAll('span,div,b').forEach(e=>{if(!e.offsetParent||e.children.length)return;const cs=getComputedStyle(e);if(e.scrollWidth>e.clientWidth+1&&cs.textOverflow!=='ellipsis'&&cs.overflow!=='visible')out.push(`tronqué : « ${e.textContent.trim().slice(0,30)} »`)});
+  return out;
+};
+</script>
+</body></html>
