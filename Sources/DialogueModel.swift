@@ -105,6 +105,7 @@ final class DialogueModel: ObservableObject {
         return nsColor(named: n)
     }
     func nsColor(named n: String) -> NSColor {
+        if let i = doc.find.protagonists.firstIndex(where: { $0.title == n }) { return Self.palette[i % Self.palette.count] }        // une couleur par protagoniste, partout
         var order: [String] = []
         for l in data?.lines ?? [] { if let x = displayName(l), !order.contains(x) { order.append(x) } }
         return Self.palette[(order.firstIndex(of: n) ?? 0) % Self.palette.count]

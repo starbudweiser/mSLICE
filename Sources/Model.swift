@@ -6,6 +6,7 @@ struct Segment: Identifiable, Equatable, Codable {
     var id = UUID()
     var start: Double
     var end: Double
+    var who: String? = nil           // protagoniste d'où vient le morceau (id « p3 » / « v2 ») : sa couleur ; nil : morceau posé à la main
     var name: String? = nil          // nom du fichier exporté, choisi par l'utilisateur (sans extension) ; nil : nom automatique numéroté
     var duration: Double { end - start }
 }

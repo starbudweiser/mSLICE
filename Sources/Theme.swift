@@ -14,26 +14,22 @@ enum Theme {
     }
 
     // Surfaces (sombre / clair)
-    static let bgNS = dyn(0x131316, 0xf4f1ec)           // fond de fenêtre
+    static let bgNS = dyn(0x131316, 0xf5f5f7)           // fond de fenêtre
     static let cardNS = dyn(0x1c1c1f, 0xffffff)         // cartes de contenu
-    static let ctlNS = dyn(0x2c2c31, 0xebe6de)          // contrôles, champs
-    static let lineNS = dyn(0x303035, 0xe3ddd2)         // filets
-    static let textNS = dyn(0xf5f5f7, 0x26231e)
-    static let text2NS = dyn(0x98989f, 0x7b756a)
-    static let accentNS = dyn(0x0a84ff, 0x26231e)       // choix actifs : bleu système (sombre), encre (clair)
-    static let onAccentNS = dyn(0xffffff, 0xf4f1ec)
+    static let ctlNS = dyn(0x2c2c31, 0xebebee)          // contrôles, champs
+    static let lineNS = dyn(0x303035, 0xe0e0e5)         // filets
+    static let textNS = dyn(0xf5f5f7, 0x1d1d1f)
+    static let text2NS = dyn(0x98989f, 0x6e6e73)
+    static let accentNS = dyn(0x0a84ff, 0x007aff)       // choix actifs et bouton principal : bleu système
+    static let onAccentNS = dyn(0xffffff, 0xffffff)
     static let brandNS = dyn(0xf08a52, 0xd9622b)        // lettre « m » du nom
-    static let segNS = dyn(0xf08a52, 0xd9622b)          // morceaux sur la timeline (couleur du morceau n° 2 ; la palette ci-dessous les distingue)
-    /// Une couleur par morceau, dans l'ordre : bleu, orange, vert, violet, cyan, rose (puis on recommence).
-    static let segPaletteNS: [NSColor] = [dyn(0x6670f5, 0x4650e0), segNS, dyn(0x34d058, 0x1fa543), dyn(0xb06af0, 0x8e48d0), dyn(0x3cc8e0, 0x1a9fb8), dyn(0xf06aa8, 0xd04888)]
-    static func segColorNS(_ i: Int) -> NSColor { segPaletteNS[((i % segPaletteNS.count) + segPaletteNS.count) % segPaletteNS.count] }
-    static func segColor(_ i: Int) -> Color { Color(nsColor: segColorNS(i)) }
+    static let segNS = dyn(0xf08a52, 0xd9622b)          // morceaux posés à la main ; ceux d'un protagoniste prennent sa couleur (`Doc.color(of:)`)
     static let okNS = dyn(0x30d158, 0x3f8f5a)
     static let warnNS = dyn(0xff9f0a, 0xb7791f)
     static let dangerNS = rgb(0xff453a)
     static let playheadNS = rgb(0xff453a)
-    static let sandNS = rgb(0xe8a257)                   // bouton principal « Extraire »
-    static let onSandNS = rgb(0x2a1d0c)
+    static let sandNS = dyn(0x0a84ff, 0x007aff)         // bouton principal « Exporter » (Flat Round : accent bleu)
+    static let onSandNS = rgb(0xffffff)
     static let mediaNS = rgb(0x0c0c0e)
 
     static let bg = Color(nsColor: bgNS), card = Color(nsColor: cardNS), ctl = Color(nsColor: ctlNS), line = Color(nsColor: lineNS)
@@ -45,7 +41,9 @@ enum Theme {
     static let media = Color(nsColor: mediaNS)
 
     // Mesures
-    static let rWindow: CGFloat = 12, rCard: CGFloat = 12, rControl: CGFloat = 8
+    /// Flat Round Design : un seul curseur d'arrondis `rr` règle tout (formules du modèle de maquette : fenêtre rr+6, cartes rr, boutons 0,6·rr, puces et pilules rr, feuilles 2·rr+2).
+    static let rr: CGFloat = 12
+    static let rWindow: CGFloat = rr + 6, rCard: CGFloat = rr, rControl: CGFloat = rr * 0.6, rChip: CGFloat = rr, rSheet: CGFloat = 2 * rr + 2
     static let barHeight: CGFloat = 48, controlHeight: CGFloat = 30
     static let sidebarWidth: CGFloat = 232, rightWidth: CGFloat = 320
 }
@@ -89,7 +87,7 @@ struct Tag: View {
         }
         .font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
         .padding(.horizontal, 8).frame(height: 18)
-        .foregroundStyle(fg).background(bg, in: Capsule())
+        .foregroundStyle(fg).background(bg, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
     }
     private var fg: Color { switch kind { case .plain: Theme.text2; case .accent: Theme.onAccent; case .ok: Theme.ok; case .warn: Theme.warn } }
     private var bg: Color { switch kind { case .plain: Theme.ctl; case .accent: Theme.accent; case .ok: Theme.ok.opacity(0.22); case .warn: Theme.warn.opacity(0.22) } }
@@ -132,7 +130,7 @@ struct Chip: View {
         }
         .font(.system(size: 11.5, weight: on ? .semibold : .regular))
         .padding(.horizontal, 10).frame(height: 24)
-        .foregroundStyle(on ? Theme.onAccent : Theme.text).background(on ? Theme.accent : Theme.ctl, in: Capsule())
+        .foregroundStyle(on ? Theme.onAccent : Theme.text).background(on ? Theme.accent : Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
         .opacity(enabled ? 1 : 0.45)
     }
 }
@@ -151,12 +149,12 @@ struct Segmented<T: Hashable>: View {
                     Text(label).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity).frame(height: tabs ? 28 : 26)
                         .foregroundStyle(selection == v ? Theme.onAccent : Theme.text2)
-                        .background(selection == v ? Theme.accent : .clear, in: Capsule())
+                        .background(selection == v ? Theme.accent : .clear, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
                 }.buttonStyle(.plain)
             }
         }
-        .padding(3).background(tabs ? Theme.card : Theme.ctl, in: Capsule())
-        .overlay { if tabs { Capsule().strokeBorder(Theme.line, lineWidth: 0.5) } }
+        .padding(3).background(tabs ? Theme.card : Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
+        .overlay { if tabs { RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).strokeBorder(Theme.line, lineWidth: 0.5) } }
     }
 }
 
@@ -216,7 +214,7 @@ struct FlatSwitch: View {
     var body: some View {
         Button { isOn.toggle() } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule().fill(isOn ? Theme.accent : Theme.ctl).frame(width: 34, height: 20)
+                RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(isOn ? Theme.accent : Theme.ctl).frame(width: 34, height: 20)
                 Circle().fill(.white).frame(width: 16, height: 16).shadow(color: .black.opacity(0.3), radius: 1, y: 1).padding(2)
             }
         }.buttonStyle(.plain).animation(.easeOut(duration: 0.12), value: isOn)

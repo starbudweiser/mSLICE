@@ -97,7 +97,7 @@ private struct RunningCard: View {
         let p = find.progress
         Card(padding: 16, spacing: 10) {
             Text(L.t("find.running", Int((p.fraction * 100).rounded()))).font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
-            GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(Theme.ctl); Capsule().fill(Theme.accent).frame(width: g.size.width * min(max(p.fraction, 0), 1)) } }.frame(height: 6)
+            GeometryReader { g in ZStack(alignment: .leading) { RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl); RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.accent).frame(width: g.size.width * min(max(p.fraction, 0), 1)) } }.frame(height: 6)
             VStack(spacing: 6) {
                 if p.hasAudio { StepRow(state: p.sounds >= 1 ? .done : .running, title: L.t("find.step.sounds"), value: p.sounds >= 1 ? L.t("find.dur.s", max(Int(p.soundsSeconds.rounded()), 1)) : "\(Int(p.sounds * 100)) %") }
                 if p.hasVideo { StepRow(state: p.images >= 1 ? .done : (p.images > 0 ? .running : .waiting), title: L.t("find.step.images"), value: p.images > 0 ? "\(Fmt.time(p.imagesTime, decimals: false)) / \(Fmt.time(doc.duration, decimals: false))" : L.t("find.step.wait")) }
@@ -397,7 +397,7 @@ private struct CharactersCard: View {
         let p = find.recognizeProgress
         return VStack(spacing: 8) {
             Text(L.t("find.chars.running", Int((p.fraction * 100).rounded()))).font(.system(size: 12.5, weight: .semibold)).frame(maxWidth: .infinity, alignment: .leading)
-            GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(Theme.ctl); Capsule().fill(Theme.accent).frame(width: g.size.width * min(max(p.fraction, 0), 1)) } }.frame(height: 6)
+            GeometryReader { g in ZStack(alignment: .leading) { RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl); RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.accent).frame(width: g.size.width * min(max(p.fraction, 0), 1)) } }.frame(height: 6)
             note(p.paused ? L.t("find.paused") : (find.recognizeRemaining.map { L.t("find.eta", duration($0)) } ?? L.t("find.working")))
             Button { find.cancelRecognize() } label: { Text(L.t("common.cancel")).frame(minWidth: 116) }.buttonStyle(FlatButton()).frame(maxWidth: .infinity)
         }
@@ -464,7 +464,7 @@ private struct VoicesCard: View {
         let p = find.voicesProgress
         return VStack(spacing: 8) {
             Text(L.t("find.voices.running", Int((p.fraction * 100).rounded()))).font(.system(size: 12.5, weight: .semibold)).frame(maxWidth: .infinity, alignment: .leading)
-            GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(Theme.ctl); Capsule().fill(Theme.accent).frame(width: g.size.width * min(max(p.fraction, 0), 1)) } }.frame(height: 6)
+            GeometryReader { g in ZStack(alignment: .leading) { RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl); RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.accent).frame(width: g.size.width * min(max(p.fraction, 0), 1)) } }.frame(height: 6)
             note(p.paused ? L.t("find.paused") : (find.voicesRemaining.map { L.t("find.eta", duration($0)) } ?? L.t("find.working")))
             Button { find.cancelRecognizeVoices() } label: { Text(L.t("common.cancel")).frame(minWidth: 116) }.buttonStyle(FlatButton()).frame(maxWidth: .infinity)
         }
@@ -759,7 +759,7 @@ private struct Pill: View {
             Text(term.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
             Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.text2).frame(width: 16, height: 16) }.buttonStyle(.plain)
         }
-        .padding(.leading, 9).padding(.trailing, 3).frame(height: 26).background(Theme.ctl, in: Capsule())
+        .padding(.leading, 9).padding(.trailing, 3).frame(height: 26).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
         .task(id: term.key) { if term.kind == .person || term.kind == .alone || term.kind == .speaks, let id = Int32(term.key) { face = await find?.avatar(id) } }
     }
 }
@@ -817,7 +817,7 @@ private struct SelectionView: View {
                 .foregroundStyle(Theme.text).padding(.horizontal, 10)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().frame(height: 26)
-        .overlay(Capsule().strokeBorder(Theme.text2.opacity(0.4), lineWidth: 1).allowsHitTesting(false))
+        .overlay(RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).strokeBorder(Theme.text2.opacity(0.4), lineWidth: 1).allowsHitTesting(false))
     }
 
     @ViewBuilder private func entries(exclude: Bool) -> some View {

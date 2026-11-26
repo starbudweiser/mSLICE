@@ -136,8 +136,8 @@ private struct DialogueRunning: View {
             Text(L.t("dlg.running")).font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
             GeometryReader { g in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.ctl)
-                    Capsule().fill(Theme.accent).frame(width: max(g.size.width * (speech ? dialogues.progress : 0.5), 6))
+                    RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl)
+                    RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.accent).frame(width: max(g.size.width * (speech ? dialogues.progress : 0.5), 6))
                 }
             }.frame(height: 6)
             VStack(alignment: .leading, spacing: 7) {
@@ -226,7 +226,7 @@ private struct DialogueList: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if let n = dialogues.displayName(l) {
                         HStack(spacing: 5) { Circle().fill(dialogues.color(named: n)).frame(width: 8, height: 8); Text(n).font(.system(size: 10.5, weight: .semibold)).lineLimit(1) }
-                            .padding(.horizontal, 8).frame(height: 18).background(Theme.ctl, in: Capsule())
+                            .padding(.horizontal, 8).frame(height: 18).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
                     } else { Tag(text: L.t("dlg.who.unknown"), kind: .warn) }
                     if editing { editor(l) } else {
                         Text(l.text).font(.system(size: 12.5)).foregroundStyle(l.discarded ? Theme.text2 : Theme.text)
@@ -325,7 +325,7 @@ private struct SpeakerChip: View {
         }
         .font(.system(size: 11.5, weight: on ? .semibold : .regular))
         .padding(.horizontal, 10).frame(height: 24)
-        .foregroundStyle(on ? Theme.onAccent : Theme.text).background(on ? Theme.accent : Theme.ctl, in: Capsule())
+        .foregroundStyle(on ? Theme.onAccent : Theme.text).background(on ? Theme.accent : Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
         .task(id: name) {
             if let person = dialogues.protagonist(named: name)?.person { image = await dialogues.doc.find.avatar(person) }
         }
@@ -421,8 +421,8 @@ private struct DialogueSending: View {
             Text(L.t("dlg.send.running")).font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
             GeometryReader { g in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.ctl)
-                    Capsule().fill(Theme.ok).frame(width: max(g.size.width * dialogues.sendProgress, 6))
+                    RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl)
+                    RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ok).frame(width: max(g.size.width * dialogues.sendProgress, 6))
                 }
             }.frame(height: 6)
             Text("\(Int(dialogues.sendProgress * 100)) %").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).frame(maxWidth: .infinity)

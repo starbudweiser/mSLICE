@@ -118,15 +118,22 @@ final class Doc: ObservableObject, Identifiable {
     }
 
     /// Ajoute un morceau ; ceux qui le chevauchent sont fusionnés avec lui.
-    func addSegment(_ a: Double, _ b: Double) {
+    func addSegment(_ a: Double, _ b: Double, who: String? = nil) {
         var lo = max(0, min(a, b)), hi = min(duration, max(a, b))
         let overlapping = segments.filter { $0.start <= hi && $0.end >= lo }
         for s in overlapping { lo = min(lo, s.start); hi = max(hi, s.end) }
         var list = segments.filter { s in !overlapping.contains(where: { $0.id == s.id }) }
-        let new = Segment(start: lo, end: hi)
+        let new = Segment(start: lo, end: hi, who: who ?? overlapping.compactMap(\.who).first)
         list.append(new); list.sort { $0.start < $1.start }
         segments = list; selected = new.id
     }
+
+    /// Couleur d'un morceau : celle de son protagoniste (la même que dans les dialogues), orange pour un morceau posé à la main.
+    func colorNS(of s: Segment) -> NSColor {
+        guard let w = s.who, let i = find.protagonists.firstIndex(where: { $0.id == w }) else { return Theme.segNS }
+        return DialogueModel.palette[i % DialogueModel.palette.count]
+    }
+    func color(of s: Segment) -> Color { Color(nsColor: colorNS(of: s)) }
 
     func deleteSelected() {
         guard let sel = selected, let i = segments.firstIndex(where: { $0.id == sel }) else { return }

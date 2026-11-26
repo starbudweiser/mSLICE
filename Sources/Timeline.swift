@@ -171,7 +171,7 @@ final class TimelineView: NSView {
                 px += step
             }
             ctx.setFillColor(text2.withAlphaComponent(0.4).cgColor); ctx.addPath(dimPath); ctx.fillPath()
-            for (k, path) in kept { ctx.setFillColor(Theme.segColorNS(k).cgColor); ctx.addPath(path); ctx.fillPath() }
+            for (k, path) in kept { ctx.setFillColor(d.colorNS(of: d.segments[k]).cgColor); ctx.addPath(path); ctx.fillPath() }
         }
 
         // Piste de résultats : un trait par passage (accent), les passages écartés par SAUF en gris
@@ -253,7 +253,7 @@ final class TimelineView: NSView {
             let sx = x(s.start), ex = x(s.end)
             guard ex >= 0, sx <= w else { continue }
             let sel = s.id == d.selected
-            let c = Theme.segColorNS(i)
+            let c = d.colorNS(of: s)
             let r = CGRect(x: sx, y: bodyTop, width: ex - sx, height: bodyH)
             ctx.setFillColor(c.withAlphaComponent(sel ? 0.18 : 0.12).cgColor); ctx.fill(r)
             ctx.setStrokeColor(c.withAlphaComponent(sel ? 1 : 0.55).cgColor); ctx.setLineWidth(sel ? 1.5 : 1); ctx.stroke(r.insetBy(dx: 0.75, dy: 0.75))

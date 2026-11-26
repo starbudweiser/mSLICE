@@ -410,10 +410,18 @@ final class FindModel: ObservableObject {
         let list = protoUnion
         guard !list.isEmpty else { return }
         doc.snapshot()
-        for s in list { doc.addSegment(s.start, s.end) }
+        let pieces = protoPieces
+        for s in list {                                                                      // le protagoniste qui occupe le plus de ce moment donne sa couleur
+            let who = pieces.max { overlap($0.segments, s) < overlap($1.segments, s) }?.id
+            doc.addSegment(s.start, s.end, who: who)
+        }
         added = AddedInfo(count: list.count, seconds: list.reduce(0) { $0 + ($1.end - $1.start) })
         protoSel = []
         if let f = list.first { doc.ensureVisible(f.start) }
+    }
+
+    private func overlap(_ list: [(start: Double, end: Double)], _ s: (start: Double, end: Double)) -> Double {
+        list.reduce(0) { $0 + max(0, min($1.end, s.end) - max($1.start, s.start)) }
     }
 
     /// Écoute un extrait de voix (la lecture s'arrête seule après quelques secondes).
@@ -484,7 +492,11 @@ final class FindModel: ObservableObject {
         let list = pieces
         guard !list.isEmpty else { return }
         doc.snapshot()
-        for s in list { doc.addSegment(s.start, s.end) }
+        let pieces = protoPieces
+        for s in list {                                                                      // le protagoniste qui occupe le plus de ce moment donne sa couleur
+            let who = pieces.max { overlap($0.segments, s) < overlap($1.segments, s) }?.id
+            doc.addSegment(s.start, s.end, who: who)
+        }
         let info = AddedInfo(count: list.count, seconds: list.reduce(0) { $0 + ($1.end - $1.start) })
         terms = []
         added = info

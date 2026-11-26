@@ -32,8 +32,8 @@ struct FlatSlider: View {
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.ctl).frame(height: 5)
-                Capsule().fill(Theme.accent).frame(width: g.size.width * value, height: 5)
+                RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl).frame(height: 5)
+                RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.accent).frame(width: g.size.width * value, height: 5)
                 Circle().fill(.white).frame(width: 13, height: 13).shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
                     .offset(x: g.size.width * value - 6.5)
             }
@@ -68,7 +68,7 @@ struct MainView: View {
             if model.showShortcuts { ShortcutsLayer(model: model) }
             if let t = model.toast {
                 VStack { Spacer(); Text(t).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.onAccent).padding(.horizontal, 14).frame(height: 32)
-                    .background(Theme.accent, in: Capsule()).padding(.bottom, 18) }.transition(.opacity)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous)).padding(.bottom, 18) }.transition(.opacity)
             }
         }
         .background(Theme.bg)
@@ -200,12 +200,12 @@ struct PlayerCard: View {
             if doc.hasVideo { PlayerSurface(player: player.player, overlay: player.scrubber.layer) } else {
                 VStack(spacing: 8) { Image(systemName: "waveform").font(.system(size: 40, weight: .light)); Text(doc.name).font(.system(size: 13)) }.foregroundStyle(.white.opacity(0.7))
             }
-            if let p = player.preparing { Text(p).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 28).background(.black.opacity(0.6), in: Capsule()) }
+            if let p = player.preparing { Text(p).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 28).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous)) }
             VStack {
                 HStack {
                     OverlayChip(text: doc.name)
                     Spacer()
-                    if let i = segmentIndex { OverlayChip(text: L.t("player.inPiece", i + 1), fill: Theme.segColor(i), bold: true) }
+                    if let i = segmentIndex { OverlayChip(text: L.t("player.inPiece", i + 1), fill: doc.segments.indices.contains(i) ? doc.color(of: doc.segments[i]) : Theme.seg, bold: true) }
                 }
                 Spacer()
                 HStack {
@@ -225,7 +225,7 @@ struct OverlayChip: View {
     let text: String; var fill: Color = .black.opacity(0.58); var bold = false; var mono = false
     var body: some View {
         Text(text).font(mono ? .system(size: 13, weight: .semibold, design: .monospaced) : .system(size: 11.5, weight: bold ? .semibold : .regular))
-            .foregroundStyle(.white).lineLimit(1).padding(.horizontal, 10).frame(height: 22).background(fill, in: Capsule())
+            .foregroundStyle(.white).lineLimit(1).padding(.horizontal, 10).frame(height: 22).background(fill, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous))
     }
 }
 
@@ -297,7 +297,7 @@ struct TimelineCard: View {
                     Button(L.t("tl.auto")) { Task { await autoTrim() } }.disabled(doc.info.audio == nil)
                     if dialogues.hasLines { Toggle(L.t("dlg.lane.chip"), isOn: $dialogues.showLane) }
                     Toggle(L.t("tl.legend"), isOn: $showLegend)
-                } label: { Text("⋯").font(.system(size: 13, weight: .bold)).frame(width: 30, height: 24).background(Theme.ctl, in: Capsule()) }
+                } label: { Text("⋯").font(.system(size: 13, weight: .bold)).frame(width: 30, height: 24).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous)) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }.frame(height: 26).padding(.bottom, 4)
             TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.height(lane: !find.lane.isEmpty, dialogues: dialogues.laneVisible))
@@ -448,7 +448,7 @@ struct PieceRow: View {
     var body: some View {
         let sel = doc.selected == segment.id
         HStack(spacing: 9) {
-            Text("\(index + 1)").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 20, height: 20).background(Theme.segColor(index), in: Circle())
+            Text("\(index + 1)").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 20, height: 20).background(doc.color(of: segment), in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
                 Text("\(Fmt.time(segment.start)) → \(Fmt.time(segment.end))").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
@@ -459,7 +459,7 @@ struct PieceRow: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(sel ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(sel ? Theme.segColor(index) : .clear, lineWidth: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(sel ? doc.color(of: segment) : .clear, lineWidth: 1.5))
         .contentShape(Rectangle())
         .onTapGesture { doc.selected = segment.id; player.pause(); player.seek(segment.start); doc.ensureVisible(segment.start) }
     }
@@ -729,8 +729,8 @@ struct SheetBox<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) { content }
             .padding(padding).frame(width: width)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous).strokeBorder(Theme.line, lineWidth: 0.5))
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rSheet, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rSheet, style: .continuous).strokeBorder(Theme.line, lineWidth: 0.5))
             .shadow(color: .black.opacity(0.28), radius: 16, y: 8)
     }
 }
@@ -771,7 +771,7 @@ struct ExportProgressSheet: View {
 struct ProgressBar: View {
     let value: Double
     var body: some View {
-        GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(Theme.ctl); Capsule().fill(Theme.seg).frame(width: g.size.width * min(max(value, 0), 1)) } }.frame(height: 6)
+        GeometryReader { g in ZStack(alignment: .leading) { RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl); RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.seg).frame(width: g.size.width * min(max(value, 0), 1)) } }.frame(height: 6)
     }
 }
 
