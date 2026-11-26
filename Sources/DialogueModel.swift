@@ -11,6 +11,7 @@ final class DialogueModel: ObservableObject {
     enum Choice: Hashable { case subtitles(String), transcribe }
 
     @Published private(set) var data: DialogueSet? { didSet { colorOrder = nil } }
+    private var playSink: AnyCancellable?
     private var colorOrder: [String: Int]?                  // nom → rang de première réplique, pour la couleur (recalculé quand les répliques ou les noms changent)
     @Published private(set) var phase: Phase = .source
     @Published private(set) var sources: [SubtitleSource] = []
@@ -49,6 +50,8 @@ final class DialogueModel: ObservableObject {
         if let s = DialogueStore.load(doc.info), !s.lines.isEmpty { data = s; phase = .list }
         choice = sources.first.map { .subtitles($0.id) } ?? .transcribe
         Task { [weak self] in await self?.refreshAssets() }
+        playSink = AppModel.shared.player.$time.sink { [weak self] t in self?.follow(t) }
+        if data?.kind == .transcript, data?.aligned != true { Task { [weak self] in await self?.alignTimings() } }              // anciennes transcriptions : recalées à l'ouverture
         findSink = doc.find.objectWillChange.sink { [weak self] _ in self?.colorOrder = nil; DispatchQueue.main.async { self?.objectWillChange.send() } }      // un protagoniste renommé change les noms affichés
     }
 
@@ -355,6 +358,28 @@ final class DialogueModel: ObservableObject {
         Speakers.apply(&s, candidates: doc.find.speakerCandidates())
         data = s; selected = nil; editing = nil; query = ""; filter = nil; phase = .list
         DialogueStore.save(s, for: doc.info)
+        if kind == .transcript { Task { [weak self] in await self?.alignTimings() } }
+    }
+
+    /// Recale les débuts et les fins sur la parole réelle (niveau sonore du fichier) : ce qu'on entend à la position d'une réplique est bien cette réplique.
+    func alignTimings() async {
+        guard var s = data, s.kind == .transcript, s.aligned != true, doc.info.audio != nil else { return }
+        await doc.ensureSilences()
+        guard let lp = doc.loudness, !lp.frameDB.isEmpty, var cur = data, cur == s || cur.lines.count == s.lines.count else { return }
+        s = cur
+        let order = s.lines.indices.sorted { s.lines[$0].start < s.lines[$1].start }
+        let fixed = lp.align(order.map { (s.lines[$0].start, s.lines[$0].end) })
+        for (k, i) in order.enumerated() { s.lines[i].start = fixed[k].start; s.lines[i].end = fixed[k].end }
+        s.aligned = true
+        cur = s; data = cur
+        DialogueStore.save(cur, for: doc.info)
+    }
+
+    /// Pendant la lecture, la réplique choisie suit ce qu'on entend (sans déplacer la tête de lecture).
+    private func follow(_ t: Double) {
+        guard AppModel.shared.player.isPlaying, editing == nil, let lines = data?.lines else { return }
+        guard let l = lines.first(where: { !$0.discarded && t >= $0.start && t < $0.end }), l.id != selected else { return }
+        selected = l.id
     }
 
     private func fail(_ key: String) { failure = key; phase = .source }

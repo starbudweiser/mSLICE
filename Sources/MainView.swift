@@ -464,27 +464,29 @@ struct PiecesCard: View {
             }
         }
     }
-    /// Curseur d'intensité, durée qu'on gagnerait, et le bouton qui l'applique (le niveau sonore est mesuré une fois à l'affichage).
+    /// « Retirer les blancs » : l'interrupteur montre tout de suite sur la timeline ce qui serait coupé (hachuré) ; le curseur règle l'intensité en direct ;
+    /// « Appliquer » resserre les morceaux (⌘Z rétablit), après quoi on ajuste à la main avec les poignées comme d'habitude.
     private var trimBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            IntensitySlider(model: model)
-            if doc.loudness == nil { SilenceProgress(doc: doc) }
-            if doc.silences != nil {
-                let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.tighten(doc.segments, inside: true).reduce(0) { $0 + $1.duration }
-                Text(L.t("sil.est", Fmt.time(max(gain, 0), decimals: true)) + " · " + Fmt.breath(model.opts.trimIntensity) + " s").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
+        let on = model.opts.trimSilence
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button { model.opts.trimSilence.toggle() } label: { Chip(text: L.t("sil.trim"), on: on) }.buttonStyle(.plain)
+                if !on { Text(L.t("sil.preview")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail) }
+                Spacer(minLength: 0)
             }
-            trimButton
+            if on {
+                IntensitySlider(model: model)
+                if doc.loudness == nil { SilenceProgress(doc: doc) }
+                if doc.silences != nil {
+                    let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.tighten(doc.segments, inside: true).reduce(0) { $0 + $1.duration }
+                    Text(L.t("sil.est", Fmt.time(max(gain, 0), decimals: true)) + " · " + Fmt.breath(model.opts.trimIntensity) + " s").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
+                    Button {
+                        Task { if let g = await doc.trimPiecesSilence() { model.flash(g > 0.05 ? L.t("sil.done", Fmt.time(g, decimals: true)) : L.t("sil.none")) } }
+                    } label: { Text(L.t("sil.apply")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(height: 32))
+                }
+            }
         }
-        .task { await doc.ensureSilences() }
-    }
-    /// « Retirer les blancs » : resserre tout de suite les morceaux sur la parole (0,2 s de respiration gardée) ; ⌘Z rétablit.
-    private var trimButton: some View {
-        Button {
-            Task {
-                if let g = await doc.trimPiecesSilence() { model.flash(g > 0.05 ? L.t("sil.done", Fmt.time(g, decimals: true)) : L.t("sil.none")) }
-            }
-        } label: { Text(L.t("sil.trim")).frame(maxWidth: .infinity) }
-            .buttonStyle(FlatButton(height: 32)).disabled(doc.silenceBusy)
+        .task(id: on) { if on { await doc.ensureSilences() } }
     }
     private var effectiveOpts: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
     private func previewName(_ outs: [OutputItem], _ i: Int) -> String {

@@ -132,6 +132,8 @@ enum L {
         "sil.tight": ["Serré", "Tight", "Estricto", "Serrato"],
         "sil.est": ["≈ gain de %@", "≈ %@ saved", "≈ ganas %@", "≈ risparmi %@"],
         "sil.searching": ["Recherche des blancs… %d %%", "Looking for silences… %d%%", "Buscando silencios… %d %%", "Ricerca dei silenzi… %d%%"],
+        "sil.preview": ["Voir ce qui serait coupé", "See what would be cut", "Ver lo que se cortaría", "Vedere cosa verrebbe tagliato"],
+        "sil.apply": ["Appliquer aux morceaux", "Apply to the pieces", "Aplicar a los fragmentos", "Applica alle parti"],
         "sil.trim": ["Retirer les blancs", "Remove silences", "Quitar los silencios", "Rimuovi i silenzi"],
         "sil.done": ["Blancs retirés : gain de %@ (⌘Z pour annuler)", "Silences removed: %@ saved (⌘Z to undo)", "Silencios quitados: ganas %@ (⌘Z para deshacer)", "Silenzi rimossi: risparmi %@ (⌘Z per annullare)"],
         "sil.none": ["Aucun blanc à retirer", "No silence to remove", "No hay silencios que quitar", "Nessun silenzio da rimuovere"],

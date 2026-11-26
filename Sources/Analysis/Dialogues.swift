@@ -28,6 +28,7 @@ struct DialogueSet: Codable, Equatable, Sendable {
     var detail = ""                        // piste ou fichier choisi, ou langue de la transcription
     var language = ""
     var lines: [DialogueLine] = []
+    var aligned: Bool? = nil               // débuts et fins recalés sur la parole réelle (niveau sonore) : la transcription place souvent le début de la réplique dans le silence qui précède
     var castTitle: String?                 // titre et épisode de l'envoi à mCASTING, gardés pour la prochaine fois
     var castEpisode: String?
 

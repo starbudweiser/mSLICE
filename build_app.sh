@@ -57,6 +57,11 @@ if [ -x "$SIGN" ]; then
   SIGN_ENTITLEMENTS="$PWD/Resources/Finder.entitlements" SIGN_NO_DEEP=1 "$SIGN" "$APP/Contents/PlugIns/FinderExt.appex"
   SIGN_NO_DEEP=1 "$SIGN" "$APP"
 else codesign --force --deep -s - "$APP"; fi
+# l'édition de développement (dans le dossier du projet) ne doit pas s'ajouter à « Ouvrir avec » : on la désenregistre
+if [ -n "${DEV:-}" ]; then
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/$APP" >/dev/null 2>&1 || true
+  pluginkit -r "$PWD/$APP/Contents/PlugIns/FinderExt.appex" >/dev/null 2>&1 || true      # son extension Finder ne doit pas doubler celle de l'appli installée
+fi
 echo "OK : $APP"
 
 if [ -z "${DEV:-}" ] && [ -z "${NO_INSTALL:-}" ]; then

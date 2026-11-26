@@ -485,6 +485,13 @@ final class FindModel: ObservableObject {
         lane = result.passages.map { LanePassage(start: $0.start, end: $0.end, excluded: $0.excludedBy != nil) }
     }
 
+    /// Piste affichée sous la forme d'onde : les moments du protagoniste choisi, resserrés sur la parole quand « Retirer les blancs » est actif (le résultat se voit tout de suite, il suit le curseur d'intensité).
+    var displayLane: [LanePassage] {
+        guard terms.isEmpty, !protoSel.isEmpty, AppModel.shared.opts.trimSilence, doc.loudness != nil else { return lane }
+        let segs = protoUnion.map { Segment(start: $0.start, end: $0.end) }
+        return doc.tighten(segs, inside: true).map { LanePassage(start: $0.start, end: $0.end, excluded: false) }
+    }
+
     // MARK: Passages et morceaux
 
     func isChecked(_ p: Passage) -> Bool { p.excludedBy == nil && !unchecked.contains(p.id) }

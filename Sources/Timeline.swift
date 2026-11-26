@@ -50,6 +50,9 @@ final class TimelineView: NSView {
         doc.peaks.onChange = { [weak self] in self?.needsDisplay = true }
         doc.strip.onChange = { [weak self] in self?.needsDisplay = true }
         doc.find.$lane.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)
+        AppModel.shared.$opts.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)          // curseur d'intensité, interrupteur « blancs » : l'aperçu se met à jour tout de suite
+        doc.$loudness.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)
+        doc.find.$protoSel.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)
         doc.dialogues.objectWillChange.receive(on: RunLoop.main).sink { _ in redraw() }.store(in: &cancellables)
         needsDisplay = true; setPlayhead(player.time)
     }
@@ -175,7 +178,7 @@ final class TimelineView: NSView {
         }
 
         // Piste de résultats : un trait par passage (accent), les passages écartés par SAUF en gris
-        if let lane = doc?.find.lane, !lane.isEmpty {
+        if let lane = doc?.find.displayLane, !lane.isEmpty {
             let laneY = waveY + TimelineView.waveH + TimelineView.gap
             let laneRect = CGRect(x: 0, y: laneY, width: w, height: TimelineView.laneH)
             ctx.setFillColor(Theme.textNS.withAlphaComponent(0.05).cgColor)
@@ -246,6 +249,18 @@ final class TimelineView: NSView {
             ctx.setFillColor(Theme.segNS.withAlphaComponent(0.14).cgColor); ctx.fill(r)
             ctx.setFillColor(Theme.segNS.cgColor); ctx.fill(CGRect(x: a - 1.5, y: bodyTop, width: 3, height: bodyH))
             flag("I", at: CGPoint(x: a + 4, y: bodyTop + 4), ctx)
+        }
+
+        // Aperçu de « Retirer les blancs » : ce qui serait coupé dans les morceaux, hachuré
+        for g in d.trimPreview() where g.end >= t0 && g.start <= t1 {
+            let r = CGRect(x: x(g.start), y: bodyTop, width: max(x(g.end) - x(g.start), 2), height: bodyH).intersection(CGRect(x: 0, y: bodyTop, width: w, height: bodyH))
+            guard !r.isNull, r.width > 0 else { continue }
+            ctx.setFillColor(Theme.cardNS.withAlphaComponent(0.78).cgColor); ctx.fill(r)
+            ctx.saveGState(); ctx.clip(to: r)
+            ctx.setStrokeColor(Theme.dangerNS.withAlphaComponent(0.55).cgColor); ctx.setLineWidth(1)
+            var hx = r.minX - bodyH
+            while hx < r.maxX { ctx.move(to: CGPoint(x: hx, y: r.maxY)); ctx.addLine(to: CGPoint(x: hx + bodyH, y: r.minY)); hx += 5 }
+            ctx.strokePath(); ctx.restoreGState()
         }
 
         // Morceaux

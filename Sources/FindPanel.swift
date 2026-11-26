@@ -732,7 +732,7 @@ private struct PeopleBar: View {
                 Spacer(minLength: 6)
                 Text(Fmt.time(total, decimals: false)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize()
             }
-            if find.doc.info.audio != nil { silenceRow(union: union) }
+            if find.doc.info.audio != nil { SilenceRow(model: model, find: find, doc: find.doc, union: union) }
             HStack(spacing: 8) {
                 Button { find.addProtosToPieces() } label: { Text(L.t("people.add")).frame(maxWidth: .infinity) }
                     .buttonStyle(FlatButton(height: 40)).opacity(nPieces == 0 ? 0.4 : 1).disabled(nPieces == 0)
@@ -746,11 +746,14 @@ private struct PeopleBar: View {
     }
 }
 
-extension PeopleBar {
-    /// « Retirer les blancs » : un interrupteur visible, qui agit sur « Ajouter aux morceaux » comme sur « Exporter ». La durée gagnée s'affiche dès que les silences sont connus.
-    fileprivate func silenceRow(union: [(start: Double, end: Double)]) -> some View {
+/// « Retirer les blancs » : un interrupteur visible, qui agit sur « Ajouter aux morceaux » comme sur « Exporter ». La durée gagnée s'affiche dès que les silences sont connus.
+private struct SilenceRow: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var find: FindModel
+    @ObservedObject var doc: Doc                     // observé : la mesure du niveau sonore qui se termine doit rafraîchir la barre (sinon « Recherche… » resterait affiché)
+    let union: [(start: Double, end: Double)]
+    var body: some View {
         let on = model.opts.trimSilence
-        let doc = find.doc
         var gain: Double?
         if on, let sil = doc.silences {
             let segs = union.map { Segment(start: $0.start, end: $0.end) }

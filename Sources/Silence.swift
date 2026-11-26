@@ -138,3 +138,22 @@ struct LoudnessProfile: Sendable {
         }.value
     }
 }
+
+extension LoudnessProfile {
+    /// Recale des répliques sur la parole réelle : un début placé dans un silence avance jusqu'au premier son, une fin placée dans un silence recule jusqu'au dernier son
+    /// (0,08 s de marge). Les répliques ne se chevauchent jamais et gardent au moins 0,25 s.
+    func align(_ ranges: [(start: Double, end: Double)]) -> [(start: Double, end: Double)] {
+        let quiet = silences(intensity: 0.75)
+        var out: [(start: Double, end: Double)] = []
+        for r in ranges {
+            var s = r.start, e = r.end
+            for z in quiet where z.end > s && z.start < e {
+                if z.start <= s + 0.06, z.end < e - 0.25 { s = max(s, z.end - 0.08) }          // silence d'ouverture
+                else if z.end >= e - 0.06, z.start > s + 0.25 { e = min(e, z.start + 0.08) }   // silence de fermeture
+            }
+            if e - s < 0.25 { s = r.start; e = r.end }
+            out.append((s, e))
+        }
+        return out
+    }
+}

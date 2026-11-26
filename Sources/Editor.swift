@@ -191,6 +191,21 @@ final class Doc: ObservableObject, Identifiable {
         return gain
     }
 
+    /// Ce que « Retirer les blancs » couperait dans les morceaux posés (pour l'aperçu hachuré de la timeline) : les intervalles retirés, au réglage d'intensité courant.
+    func trimPreview() -> [(start: Double, end: Double)] {
+        guard AppModel.shared.opts.trimSilence, silences != nil else { return [] }
+        var out: [(start: Double, end: Double)] = []
+        for seg in segments {
+            var cur = seg.start
+            for t in tighten([seg], inside: true).sorted(by: { $0.start < $1.start }) {
+                if t.start - cur > 0.02 { out.append((cur, t.start)) }
+                cur = max(cur, t.end)
+            }
+            if seg.end - cur > 0.02 { out.append((cur, seg.end)) }
+        }
+        return out
+    }
+
     func deleteSelected() {
         guard let sel = selected, let i = segments.firstIndex(where: { $0.id == sel }) else { return }
         snapshot(); segments.remove(at: i)

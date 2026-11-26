@@ -26,6 +26,9 @@ if [ -z "${PUBLISH_ONLY:-}" ]; then
   (cd "$OUT" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256")
   python3 "$TOOLS/release_notes.py" mSLICE "$VERSION" --sha "$ZIP.sha256" -o "$OUT/notes.md"
   rm -rf "${PWD:?}/mSLICE.app"
+  # l'appli notarisée n'est plus utile une fois zippée : la laisser ferait apparaître une version de plus dans « Ouvrir avec » (Launch Services l'enregistre)
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$OUT/notarized/mSLICE.app" >/dev/null 2>&1 || true
+  rm -rf "$OUT/notarized"
 fi
 [ -f "$ZIP" ] && [ -f "$ZIP.sha256" ] && [ -f "$OUT/notes.md" ] || { echo "Paquet introuvable dans $OUT : lancez d'abord sans PUBLISH_ONLY." >&2; exit 1; }
 if [ -n "${NO_PUBLISH:-}" ]; then echo "Paquet prêt (non publié) : $ZIP"; exit 0; fi
