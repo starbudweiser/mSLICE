@@ -198,13 +198,11 @@ private struct DialogueList: View {
                 if !dialogues.query.isEmpty { Button { dialogues.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.text2) }.buttonStyle(.plain) }
             }.padding(.horizontal, 10).frame(height: 28).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
             if !dialogues.speakerNames.isEmpty || dialogues.unknownCount > 0 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 5) {
+                FlowLayout(spacing: 5) {                                   // les filtres passent à la ligne au lieu de déborder à droite
                         Button { dialogues.filter = nil } label: { Chip(text: L.t("dlg.who.all"), on: dialogues.filter == nil) }.buttonStyle(.plain)
                         ForEach(dialogues.speakerNames, id: \.name) { s in
                             Button { dialogues.filter = dialogues.filter == s.name ? nil : s.name } label: { SpeakerChip(dialogues: dialogues, name: s.name, count: s.count, on: dialogues.filter == s.name) }.buttonStyle(.plain)
                         }
-                    }
                 }
             }
             HStack(spacing: 6) {

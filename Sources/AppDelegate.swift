@@ -284,6 +284,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+            if self.arg("--state") == "dialogues", let d = model.current {                  // onglet Dialogues : personnages et voix reconnus (--recognize, --voices), puis transcription
+                let ud = UserDefaults.standard
+                self.restoreAfterCapture = { ud.removeObject(forKey: "rightTab") }
+                ud.set(3, forKey: "rightTab")
+                Task { @MainActor in
+                    _ = await d.find.analyzeAndWait(force: false)
+                    if self.arg("--recognize") != nil { _ = await d.find.recognizeAndWait() }
+                    if self.arg("--voices") != nil { _ = await d.find.recognizeVoicesAndWait() }
+                    d.dialogues.choice = .transcribe; d.dialogues.setLanguage(self.arg("--lang") ?? "fr-FR"); d.dialogues.start()
+                }
+            }
             if let st = self.arg("--state"), st.hasPrefix("agent") {          // panneau de discussion (réglages restaurés après la capture)
                 let ud = UserDefaults.standard
                 self.restoreAfterCapture = { ud.removeObject(forKey: "rightTab"); ud.removeObject(forKey: "agent.enabled") }
