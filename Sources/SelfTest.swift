@@ -203,6 +203,18 @@ enum EditorTest {
         d.addSegment(10, 20)
         d.moveEdge(d.segments[0].id, start: true, to: 25, snap: false)
         check(d.segments[0].start < d.segments[0].end, "poignée d'entrée bornée par la sortie")
+        // « blancs retirés » : silences resserrés (0,1 s gardée de chaque côté d'une coupe)
+        do {
+            let seg = [Segment(start: 10, end: 30, name: "a")]
+            let sil: [(start: Double, end: Double)] = [(9, 12), (18, 22), (29, 31)]
+            let edges = Silence.tighten(seg, silences: sil, inside: false)
+            check(edges.count == 1 && abs(edges[0].start - 11.9) < 0.001 && abs(edges[0].end - 29.1) < 0.001 && edges[0].name == "a", "blancs : début et fin resserrés (\(edges.map { "\($0.start)→\($0.end)" }))")
+            let inside = Silence.tighten(seg, silences: sil, inside: true)
+            check(inside.count == 2 && abs(inside[0].end - 18.1) < 0.001 && abs(inside[1].start - 21.9) < 0.001, "blancs : silence intérieur coupé, 0,2 s gardée (\(inside.map { "\($0.start)→\($0.end)" }))")
+            check(Silence.tighten([Segment(start: 20, end: 21)], silences: [(19, 22)], inside: true).isEmpty, "blancs : morceau muet")
+            let short = Silence.tighten(seg, silences: [(18, 18.15)], inside: true)
+            check(short.count == 1 && abs(short[0].start - 10) < 0.001 && abs(short[0].end - 30) < 0.001, "blancs : un silence trop court (≤ 0,2 s) reste")
+        }
         print(failures == 0 ? "TOUT EST OK" : "\(failures) échec(s)")
         return failures == 0 ? 0 : 1
     }
@@ -659,6 +671,23 @@ enum UITest {
         check(d.exported, "fichier marqué « Extrait »")
         if shots == "1" { await wait(0.5); delegate.snapshot(to: "build/ui-done.png") }
         model.closeSheet()
+
+        // « blancs retirés » : un fichier fusionné resserré sur la parole (silences cherchés puis coupés, 0,2 s de respiration gardée)
+        for f in (try? FileManager.default.contentsOfDirectory(atPath: out.path)) ?? [] { try? FileManager.default.removeItem(at: out.appendingPathComponent(f)) }
+        if d.info.audio != nil {
+            var t = model.opts; t.folder = out.path; t.merge = true; t.trimSilence = true; t.passthrough = false; t.format = .mp4; t.voiceOnly = false; model.opts = t
+            await d.ensureSilences()
+            let want = d.exportSegments(t).reduce(0) { $0 + $1.duration }, whole = d.segments.reduce(0) { $0 + $1.duration }
+            check(d.silences != nil && want <= whole + 0.001, "blancs retirés : \(d.silences?.count ?? -1) silences trouvés, \(String(format: "%.1f", whole - want)) s à retirer sur \(String(format: "%.1f", whole)) s")
+            model.exportNow()
+            for _ in 0 ..< 600 { if model.sheet == .done { break }; await wait(0.1) }
+            let made = ((try? FileManager.default.contentsOfDirectory(atPath: out.path)) ?? []).map { out.appendingPathComponent($0) }
+            let got = made.count == 1 ? (Probe.read(made[0])?.duration ?? -1) : -1
+            check(model.sheet == .done && made.count == 1 && abs(got - want) < 1.5, "blancs retirés : fichier fusionné de \(String(format: "%.1f", got)) s (attendu \(String(format: "%.1f", want)) s)")
+            model.closeSheet()
+            for f in made { try? FileManager.default.removeItem(at: f) }
+            t.merge = false; t.trimSilence = false; t.passthrough = true; t.format = .same; model.opts = t
+        }
 
         // schéma mslice:// (envoyé par l'extension Finder) : ouvre le fichier sans doublon ; trim ouvre l'élagage en lot
         let enc = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+"))) ?? path

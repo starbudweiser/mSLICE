@@ -32,4 +32,31 @@ enum Silence {
         guard b - a > 0.5, a > 0.01 || b < info.duration - 0.01 else { return nil }      // rien à retirer : aucun résultat
         return (a, b)
     }
+
+    /// Réglages des « blancs retirés » : un silence est ce qui reste sous −35 dB pendant 0,35 s ; on en garde 0,1 s de chaque côté d'une coupe (0,2 s de respiration entre deux prises).
+    static let trimNoiseDB = -35.0, trimMinDuration = 0.35, trimKeep = 0.1
+
+    /// Resserre les morceaux sur la parole. Début et fin : le silence d'ouverture ou de fermeture est réduit à `keep`. Si `inside`, un silence au milieu d'un morceau est coupé
+    /// (il en reste `keep` de chaque côté) : le morceau devient plusieurs prises, utile quand tout est assemblé dans un seul fichier. Un morceau entièrement muet disparaît.
+    static func tighten(_ segments: [Segment], silences: [(start: Double, end: Double)], keep: Double = trimKeep, inside: Bool) -> [Segment] {
+        let sil = silences.sorted { $0.start < $1.start }
+        var out: [Segment] = []
+        for seg in segments {
+            var a = seg.start, b = seg.end
+            var cuts: [(Double, Double)] = []                                          // (fin de la prise, reprise suivante)
+            for z in sil where z.end > a && z.start < b {
+                if z.start <= a + 0.02 { a = max(a, z.end - keep) }                        // silence d'ouverture
+                else if z.end >= b - 0.02 { b = min(b, z.start + keep) }                   // silence de fermeture
+                else if inside, z.end - z.start > 2 * keep { cuts.append((z.start + keep, z.end - keep)) }
+            }
+            guard b - a > 0.05 else { continue }
+            var cur = a, first = true
+            for c in cuts.sorted(by: { $0.0 < $1.0 }) where c.0 > cur && c.0 < b && c.1 < b {
+                if c.0 - cur > 0.05 { var n = Segment(start: cur, end: c.0, who: seg.who); if first { n.name = seg.name; n.id = seg.id; first = false }; out.append(n) }
+                cur = c.1
+            }
+            if b - cur > 0.05 { var n = Segment(start: cur, end: b, who: seg.who); if first { n.name = seg.name; n.id = seg.id }; out.append(n) }
+        }
+        return out
+    }
 }

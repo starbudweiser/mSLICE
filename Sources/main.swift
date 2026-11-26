@@ -60,6 +60,21 @@ if let i = CommandLine.arguments.firstIndex(of: "--dfn-run"), CommandLine.argume
     print(ok ? "OK : \(String(format: "%.2f", Date().timeIntervalSince(t0))) s" : "ÉCHEC"); exit(ok ? 0 : 1)
 }
 
+// `mSLICE --silence-info <fichier>` : silences trouvés (réglages de « blancs retirés ») et durée gagnée en fusionnant le fichier entier.
+if let i = CommandLine.arguments.firstIndex(of: "--silence-info"), CommandLine.arguments.indices.contains(i + 1) {
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    Task { @MainActor in
+        guard let info = Probe.read(url) else { print("sonde impossible"); exit(1) }
+        let r = await Silence.ranges(info, noiseDB: Silence.trimNoiseDB, minDuration: Silence.trimMinDuration)
+        let whole = [Segment(start: 0, end: info.duration)]
+        let t = Silence.tighten(whole, silences: r, inside: true)
+        print("durée \(String(format: "%.2f", info.duration)) s, \(r.count) silences (\(String(format: "%.2f", r.reduce(0) { $0 + $1.end - $1.start })) s), \(t.count) prises, \(String(format: "%.2f", t.reduce(0) { $0 + $1.duration })) s gardées")
+        for z in r.prefix(12) { print(String(format: "  silence %.2f → %.2f (%.2f s)", z.start, z.end, z.end - z.start)) }
+        exit(0)
+    }
+    dispatchMain()
+}
+
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate

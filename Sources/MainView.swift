@@ -502,29 +502,40 @@ struct ExportOptionsSheet: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
     let request: ExportRequest
+    var maxHeight: CGFloat = 10_000                     // hauteur disponible dans la fenêtre : au-delà, les questions défilent (titre et boutons restent visibles)
     @State private var more = false
+    @State private var bodyHeight: CGFloat = 0
 
     private var people: FindModel? { if case .people(let f) = request.kind { return f }; return nil }
     private var eff: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
+    private var silenceWait: Bool { model.opts.trimSilence && doc.info.audio != nil && doc.silences == nil }          // la recherche des blancs n'est pas finie
     private var waitingClean: Bool { model.opts.voiceOnly && doc.canClean && doc.clean != .ready }
 
     var body: some View {
         SheetBox(width: 440, padding: 18, spacing: 14) {
             Text(title).font(.system(size: 16, weight: .bold))
-            question(L.t("exp.q.files")) { filesChoice }
-            question(L.t("exp.q.format")) { formatMenu; Text(L.t(model.opts.passthrough ? "exp.format.copy.note" : "exp.format.re.note")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading) }
-            if doc.canClean { question(L.t("exp.q.sound")) { soundChoice } }
-            question(L.t("exp.q.folder")) { folderRow }
-            Button { withAnimation(.easeOut(duration: 0.15)) { more.toggle() } } label: {
-                HStack { Text(L.t("exp.more")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer(); Image(systemName: more ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.text2) }
-                    .frame(height: 24).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            if more { moreOptions }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    question(L.t("exp.q.files")) { filesChoice }
+                    question(L.t("exp.q.format")) { formatMenu; Text(L.t(model.opts.passthrough ? "exp.format.copy.note" : "exp.format.re.note")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading) }
+                    if doc.canClean { question(L.t("exp.q.sound")) { soundChoice } }
+                    if people == nil, doc.info.audio != nil { question(L.t("exp.q.silence")) { silenceChoice } }
+                    question(L.t("exp.q.folder")) { folderRow }
+                    Button { withAnimation(.easeOut(duration: 0.15)) { more.toggle() } } label: {
+                        HStack { Text(L.t("exp.more")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer(); Image(systemName: more ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.text2) }
+                            .frame(height: 24).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    if more { moreOptions }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(GeometryReader { g in Color.clear.onAppear { bodyHeight = g.size.height }.onChange(of: g.size.height) { _, h in bodyHeight = h } })
+            }
+            .frame(height: bodyHeight > 0 ? min(bodyHeight, max(maxHeight - 130, 200)) : nil)
             HStack(spacing: 8) {
                 Spacer()
                 Button { model.cancelOptions() } label: { Text(L.t("common.cancel")).frame(width: 76) }.buttonStyle(FlatButton(height: 40)).keyboardShortcut(.cancelAction)
                 Button { model.confirmExport() } label: { Text(waitingClean ? L.t("clean.building", Int(cleanPercent)) : goLabel).frame(width: 166) }
-                    .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(waitingClean || request.count == 0 ? 0.5 : 1).disabled(waitingClean || request.count == 0)
+                    .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(waitingClean || silenceWait || request.count == 0 ? 0.5 : 1).disabled(waitingClean || silenceWait || request.count == 0)
             }
         }
     }
@@ -610,6 +621,26 @@ struct ExportOptionsSheet: View {
     }
     private var voiceBinding: Binding<Bool> {
         Binding(get: { model.opts.voiceOnly }, set: { v in model.opts.voiceOnly = v; if v, doc.clean == .none || doc.clean == .failed { doc.buildClean() } })
+    }
+
+    // 4. Blancs
+    private var silenceChoice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Segmented(options: [(false, L.t("exp.silence.keep")), (true, L.t("exp.silence.remove"))], selection: Binding(
+                get: { model.opts.trimSilence },
+                set: { v in
+                    model.opts.trimSilence = v
+                    if v { if !doc.info.isAudioOnly { model.opts.passthrough = false }; Task { await doc.ensureSilences() } }       // couper dans les blancs demande une recompression
+                }))
+            if model.opts.trimSilence {
+                let note: String = {
+                    guard let _ = doc.silences else { return L.t("exp.silence.busy") }
+                    let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.exportSegments(eff).reduce(0) { $0 + $1.duration }
+                    return L.t(model.opts.merge ? "exp.silence.result.merge" : "exp.silence.result.edges", Fmt.time(max(gain, 0), decimals: true))
+                }()
+                Text(note + (doc.info.isAudioOnly ? "" : " " + L.t("exp.silence.recode"))).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     // Dossier
@@ -713,7 +744,7 @@ struct SheetLayer: View {
         ZStack {
             Color.black.opacity(0.36).ignoresSafeArea().onTapGesture { if model.sheet == .options { model.cancelOptions() } }
             if model.sheet == .options, let d = model.current, let r = model.request {
-                ExportOptionsSheet(model: model, doc: d, request: r)
+                GeometryReader { g in ExportOptionsSheet(model: model, doc: d, request: r, maxHeight: g.size.height - 40).frame(width: g.size.width, height: g.size.height) }
             } else if let run = model.run {
                 if model.sheet == .export { ExportProgressSheet(model: model, run: run) } else { DoneSheet(model: model, run: run) }
             }

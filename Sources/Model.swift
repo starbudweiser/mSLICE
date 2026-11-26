@@ -46,6 +46,8 @@ struct ExportOptions: Codable, Equatable {
     var digits = 2                        // numérotation : _01, _02…
     var voiceOnly = false                 // « voix seules » : l'audio exporté est la piste nettoyée (`CleanVoice`) ; jamais mémorisé d'un lancement à l'autre
 
+    var trimSilence = false               // « blancs retirés » : silences resserrés autour des morceaux (et à l'intérieur dans un fichier fusionné) ; jamais mémorisé
+
     private enum CodingKeys: String, CodingKey { case merge, passthrough, format, codec, quality, folder, suffix, digits }
 
     /// Format effectif quand on recompresse : « Identique » devient MP4 (ou M4A pour un fichier audio).

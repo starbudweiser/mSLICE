@@ -15,6 +15,8 @@ final class Doc: ObservableObject, Identifiable {
     @Published var baseName = "" { didSet { scheduleSave() } }        // nom de base des fichiers exportés ; vide : nom de l'original
     @Published var mergeName = "" { didSet { scheduleSave() } }       // nom du fichier fusionné ; vide : automatique
     @Published var exported = false
+    @Published var silences: [(start: Double, end: Double)]?      // silences du fichier (réglages de `Silence.trim…`), calculés à la demande pour « blancs retirés »
+    @Published var silenceBusy = false
     @Published var viewStart = 0.0
     @Published var viewSpan: Double
     @Published var clean: CleanState = .none
@@ -134,6 +136,19 @@ final class Doc: ObservableObject, Identifiable {
         return DialogueModel.palette[i % DialogueModel.palette.count]
     }
     func color(of s: Segment) -> Color { Color(nsColor: colorNS(of: s)) }
+
+    /// Calcule les silences une fois (une seule recherche à la fois).
+    func ensureSilences() async {
+        if silences != nil || silenceBusy || info.audio == nil { return }
+        silenceBusy = true
+        let r = await Silence.ranges(info, noiseDB: Silence.trimNoiseDB, minDuration: Silence.trimMinDuration)
+        silences = r; silenceBusy = false
+    }
+    /// Morceaux à exporter : ceux de la timeline, resserrés sur la parole si « blancs retirés » est choisi et les silences connus.
+    func exportSegments(_ o: ExportOptions) -> [Segment] {
+        guard o.trimSilence, let sil = silences else { return segments }
+        return Silence.tighten(segments, silences: sil, inside: o.merge)
+    }
 
     func deleteSelected() {
         guard let sel = selected, let i = segments.firstIndex(where: { $0.id == sel }) else { return }
@@ -294,11 +309,15 @@ final class AppModel: ObservableObject {
 
     func exportNow() {
         guard let d = current, !d.segments.isEmpty, sheet == .none, var o = exportOptions(for: d) else { return }
+        if o.trimSilence, d.info.audio != nil, d.silences == nil {                      // les blancs ne sont pas encore cherchés : on les cherche, puis l'export repart
+            flash(L.t("exp.silence.busy")); Task { await d.ensureSilences(); self.exportNow() }; return
+        }
+        if o.trimSilence, d.silences != nil, !d.info.isAudioOnly { o.passthrough = false }     // coupes au plus juste : recompression
         // La copie directe n'est possible que si les codecs entrent dans le conteneur choisi (l'audio refait par « voix seules » n'est pas copié).
         if o.passthrough, !Planner.canCopy(info: d.info, to: o.format), !o.voiceOnly { flash(L.t("err.cantcopy")); return }
         if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
         if !o.passthrough, o.format == .same { o.format = d.info.isAudioOnly ? .m4a : .mp4 }
-        let outs = Planner.outputs(info: d.info, segments: d.segments, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: d.mergeName)
+        let outs = Planner.outputs(info: d.info, segments: d.exportSegments(o), opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: d.mergeName)
         startExport(d, outs, o)
     }
 
