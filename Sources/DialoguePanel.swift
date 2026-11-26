@@ -251,8 +251,8 @@ private struct DialogueList: View {
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(on ? Theme.accent : Theme.line, lineWidth: on ? 1.2 : 0.5))
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { if !editing { dialogues.select(l.id); begin(l) } }
-        .onTapGesture { if !editing { dialogues.select(l.id) } }
+        .onTapGesture { if !editing { dialogues.select(l.id) } }                                              // clic simple immédiat (pas d'attente du double-clic)
+        .simultaneousGesture(TapGesture(count: 2).onEnded { if !editing { dialogues.select(l.id); begin(l) } })
     }
 
     private func begin(_ l: DialogueLine) { draft = l.text; nameDraft = l.who ?? ""; cursor = 0; dialogues.editing = l.id }

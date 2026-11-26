@@ -101,6 +101,7 @@ final class FindModel: ObservableObject {
     @Published var protoSel: [String] = [] { didSet { if oldValue != protoSel { added = nil; recompute() } } }
     @Published var protoMode: ProtoMode = .visible { didSet { if oldValue != protoMode { recompute() } } }
     @Published var protoOut: ProtoOut = .each
+    @Published var protoNames: [String: String] = [:]          // noms de fichiers choisis dans la feuille d'export (clé : nom du groupe)
     @Published var protoWhole = false { didSet { if oldValue != protoWhole { recompute() } } }
     private var voiceJob: AnalysisJob?
     var listenHandler: ((Double) -> Void)?

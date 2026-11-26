@@ -52,6 +52,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--install-model"), CommandLine.
     dispatchMain()
 }
 
+// `mSLICE --dfn-run <entrée.wav (48 kHz mono)> <sortie.wav>` : débruitage DeepFilterNet3 sans fenêtre (essais de fidélité), sortie en flottants.
+if let i = CommandLine.arguments.firstIndex(of: "--dfn-run"), CommandLine.arguments.indices.contains(i + 2) {
+    let a = URL(fileURLWithPath: CommandLine.arguments[i + 1]), b = URL(fileURLWithPath: CommandLine.arguments[i + 2])
+    guard let d = DeepFilterNet() else { print("modèle introuvable (MSLICE_DFN_MODEL)"); exit(1) }
+    let t0 = Date(); let ok = d.run(input: a, output: b, job: AnalysisJob(), float32: true) { _ in }
+    print(ok ? "OK : \(String(format: "%.2f", Date().timeIntervalSince(t0))) s" : "ÉCHEC"); exit(ok ? 0 : 1)
+}
+
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate

@@ -111,7 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for u in urls {
             if u.isFileURL { files.append(u); continue }
             guard u.scheme == "mslice" || u.scheme == "mslice-dev", let c = URLComponents(url: u, resolvingAgainstBaseURL: false) else { continue }
-            let paths = (c.queryItems ?? []).filter { $0.name == "f" }.compactMap { $0.value }.map { URL(fileURLWithPath: $0) }
+            // un lien extérieur ne peut désigner que des fichiers réguliers existants, par chemin absolu (au plus 500)
+            let paths = (c.queryItems ?? []).filter { $0.name == "f" }.compactMap { $0.value }.prefix(500)
+                .filter { var d: ObjCBool = false; return $0.hasPrefix("/") && FileManager.default.fileExists(atPath: $0, isDirectory: &d) && !d.boolValue }
+                .map { URL(fileURLWithPath: $0) }
             if c.host == "trim" { trim += paths } else { files += paths }
         }
         if !files.isEmpty { openMainWindow(show: true); AppModel.shared.open(files) }

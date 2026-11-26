@@ -153,21 +153,25 @@ final class TimelineView: NSView {
         if d.info.audio != nil {
             let norm = max(d.peaks.maxSeen * 0.9, 0.05)
             let mid = waveY + TimelineView.waveH / 2, half = TimelineView.waveH / 2 - 3
-            let keptPath = CGMutablePath(), dimPath = CGMutablePath()
+            let dimPath = CGMutablePath()
+            var kept: [Int: CGMutablePath] = [:]                                       // un tracé par morceau (sa couleur)
             let ranges = d.segments.map { (x($0.start), x($0.end)) }
+            let barW: CGFloat = 3, step: CGFloat = 5                                   // bâtons épais, espacés
             var px: CGFloat = 0
             while px < w {
-                let a = time(px), b = time(px + 2)
-                let v = d.peaks.peak(a, b)
+                let v = d.peaks.peak(time(px), time(px + step))
                 if v > 0 {
                     let amp = CGFloat(pow(Double(min(v / norm, 1)), 0.7)) * half
-                    let r = CGRect(x: px, y: mid - max(amp, 0.5), width: 1.5, height: max(amp * 2, 1))
-                    if ranges.contains(where: { px >= $0.0 && px <= $0.1 }) { keptPath.addRect(r) } else { dimPath.addRect(r) }
+                    let r = CGRect(x: px, y: mid - max(amp, 1), width: barW, height: max(amp * 2, 2))
+                    let bar = CGPath(roundedRect: r, cornerWidth: 1.2, cornerHeight: 1.2, transform: nil)
+                    if let k = ranges.firstIndex(where: { px + barW / 2 >= $0.0 && px + barW / 2 <= $0.1 }) {
+                        let path = kept[k] ?? CGMutablePath(); path.addPath(bar); kept[k] = path
+                    } else { dimPath.addPath(bar) }
                 }
-                px += 2.5
+                px += step
             }
-            ctx.setFillColor(text2.withAlphaComponent(0.45).cgColor); ctx.addPath(dimPath); ctx.fillPath()
-            ctx.setFillColor(Theme.segNS.cgColor); ctx.addPath(keptPath); ctx.fillPath()
+            ctx.setFillColor(text2.withAlphaComponent(0.4).cgColor); ctx.addPath(dimPath); ctx.fillPath()
+            for (k, path) in kept { ctx.setFillColor(Theme.segColorNS(k).cgColor); ctx.addPath(path); ctx.fillPath() }
         }
 
         // Piste de résultats : un trait par passage (accent), les passages écartés par SAUF en gris
@@ -249,10 +253,10 @@ final class TimelineView: NSView {
             let sx = x(s.start), ex = x(s.end)
             guard ex >= 0, sx <= w else { continue }
             let sel = s.id == d.selected
-            let c = Theme.segNS
+            let c = Theme.segColorNS(i)
             let r = CGRect(x: sx, y: bodyTop, width: ex - sx, height: bodyH)
-            ctx.setFillColor(c.withAlphaComponent(sel ? 0.15 : 0.08).cgColor); ctx.fill(r)
-            if sel { ctx.setStrokeColor(c.cgColor); ctx.setLineWidth(1.5); ctx.stroke(r.insetBy(dx: 0.75, dy: 0.75)) }
+            ctx.setFillColor(c.withAlphaComponent(sel ? 0.18 : 0.12).cgColor); ctx.fill(r)
+            ctx.setStrokeColor(c.withAlphaComponent(sel ? 1 : 0.55).cgColor); ctx.setLineWidth(sel ? 1.5 : 1); ctx.stroke(r.insetBy(dx: 0.75, dy: 0.75))
             ctx.setFillColor(c.cgColor)
             ctx.fill(CGRect(x: sx, y: bodyTop, width: 3, height: bodyH)); ctx.fill(CGRect(x: ex - 3, y: bodyTop, width: 3, height: bodyH))
             if sel {
@@ -261,13 +265,13 @@ final class TimelineView: NSView {
                     ctx.setFillColor(c.cgColor); ctx.addPath(CGPath(roundedRect: g, cornerWidth: 3, cornerHeight: 3, transform: nil)); ctx.fillPath()
                 }
             }
-            if r.width >= 44 { badge("\(i + 1)", center: CGPoint(x: (sx + ex) / 2, y: bodyTop + 14), ctx) }
+            if r.width >= 44 { badge("\(i + 1)", center: CGPoint(x: (sx + ex) / 2, y: bodyTop + 14), color: c, ctx) }
             if sel, r.width >= 96 { flag("I", at: CGPoint(x: sx + 8, y: bodyTop + 4), ctx); flag("O", at: CGPoint(x: ex - 26, y: bodyTop + 4), ctx) }
         }
     }
 
-    private func badge(_ s: String, center c: CGPoint, _ ctx: CGContext) {
-        ctx.setFillColor(Theme.segNS.cgColor); ctx.fillEllipse(in: CGRect(x: c.x - 10, y: c.y - 10, width: 20, height: 20))
+    private func badge(_ s: String, center c: CGPoint, color: NSColor, _ ctx: CGContext) {
+        ctx.setFillColor(color.cgColor); ctx.fillEllipse(in: CGRect(x: c.x - 10, y: c.y - 10, width: 20, height: 20))
         let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: NSColor.white]
         let sz = (s as NSString).size(withAttributes: a)
         (s as NSString).draw(at: NSPoint(x: c.x - sz.width / 2, y: c.y - sz.height / 2), withAttributes: a)

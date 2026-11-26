@@ -205,7 +205,7 @@ struct PlayerCard: View {
                 HStack {
                     OverlayChip(text: doc.name)
                     Spacer()
-                    if let i = segmentIndex { OverlayChip(text: L.t("player.inPiece", i + 1), fill: Theme.seg, bold: true) }
+                    if let i = segmentIndex { OverlayChip(text: L.t("player.inPiece", i + 1), fill: Theme.segColor(i), bold: true) }
                 }
                 Spacer()
                 HStack {
@@ -448,7 +448,7 @@ struct PieceRow: View {
     var body: some View {
         let sel = doc.selected == segment.id
         HStack(spacing: 9) {
-            Text("\(index + 1)").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 20, height: 20).background(Theme.seg, in: Circle())
+            Text("\(index + 1)").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 20, height: 20).background(Theme.segColor(index), in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
                 Text("\(Fmt.time(segment.start)) → \(Fmt.time(segment.end))").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
@@ -459,7 +459,7 @@ struct PieceRow: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(sel ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(sel ? Theme.seg : .clear, lineWidth: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(sel ? Theme.segColor(index) : .clear, lineWidth: 1.5))
         .contentShape(Rectangle())
         .onTapGesture { doc.selected = segment.id; player.pause(); player.seek(segment.start); doc.ensureVisible(segment.start) }
     }
@@ -625,7 +625,7 @@ struct ExportOptionsSheet: View {
     // Plus d'options
     @ViewBuilder private var moreOptions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if people == nil { names }
+            if let f = people { peopleNames(f) } else { names }
             if !model.opts.passthrough, !eff.resolvedFormat(for: doc.info).isAudio, !doc.info.isAudioOnly {
                 row(L.t("export.codec")) {
                     Menu {
@@ -664,6 +664,18 @@ struct ExportOptionsSheet: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Noms des fichiers des personnes : un champ par fichier (un par personne, ou un seul pour les moments réunis).
+    private func peopleNames(_ f: FindModel) -> some View {
+        let base = Planner.sanitize(doc.baseName.isEmpty ? doc.info.url.deletingPathExtension().lastPathComponent : doc.baseName)
+        let ext = eff.resolvedFormat(for: doc.info).ext(source: doc.info.ext)
+        let groups = f.exportGroups(each: f.protoOut == .each).filter { !$0.segments.isEmpty }
+        return VStack(spacing: 4) {
+            ForEach(groups, id: \.name) { g in
+                nameField(placeholder: "\(base) – \(g.name)", text: Binding(get: { f.protoNames[g.name] ?? "" }, set: { f.protoNames[g.name] = $0 }), ext: ext)
             }
         }
     }

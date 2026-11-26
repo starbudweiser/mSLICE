@@ -44,6 +44,10 @@ sed -e "s/__ID__/$ID/g" -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" 
 for l in Resources/*.lproj; do cp -R "$l" "$APP/Contents/Resources/"; done
 # licences des composants embarqués (ffmpeg LGPL, LAME, mpg123, Opus, libvpx) et de l'appli
 mkdir -p "$APP/Contents/Resources/Licenses"; cp licenses/* LICENSE THIRD_PARTY_LICENSES.md "$APP/Contents/Resources/Licenses/"
+# réseau DeepFilterNet3 (débruitage des voix) : modèle Core ML compilé dans les ressources
+chmod -R u+w Resources/models 2>/dev/null || true
+xcrun coremlcompiler compile Resources/models/DeepFilterNet3.mlpackage "$APP/Contents/Resources/" >/dev/null
+[ -d "$APP/Contents/Resources/DeepFilterNet3.mlmodelc" ] || { echo "Compilation du modèle DeepFilterNet3 échouée" >&2; exit 1; }
 rm -rf build
 
 # Signature : tout (ffmpeg, extension), puis l'extension avec ses droits (sandbox), puis l'appli pour sceller l'extension finale.

@@ -296,7 +296,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Exporte directement des groupes de moments choisis dans l'onglet Trouver (un fichier par groupe, chacun fusionné), sans toucher aux morceaux du fichier.
-    func exportGroups(_ groups: [(name: String, segments: [(start: Double, end: Double)])], voice: Bool = false) {
+    func exportGroups(_ groups: [(name: String, segments: [(start: Double, end: Double)])], voice: Bool = false, names: [String: String] = [:]) {
         guard let d = current, sheet == .none, groups.contains(where: { !$0.segments.isEmpty }), var o = exportOptions(for: d, voice: voice) else { return }
         o.merge = true
         if o.passthrough, !Planner.canCopy(info: d.info, to: o.format), !o.voiceOnly { flash(L.t("err.cantcopy")); return }
@@ -305,7 +305,7 @@ final class AppModel: ObservableObject {
         let base = Planner.sanitize(d.baseName.isEmpty ? d.info.url.deletingPathExtension().lastPathComponent : d.baseName)
         var outs: [OutputItem] = []
         for g in groups where !g.segments.isEmpty {
-            outs += Planner.outputs(info: d.info, segments: g.segments.map { Segment(start: $0.start, end: $0.end) }, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: "\(base) – \(g.name)")
+            outs += Planner.outputs(info: d.info, segments: g.segments.map { Segment(start: $0.start, end: $0.end) }, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: names[g.name].flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? "\(base) – \(g.name)")
         }
         startExport(d, outs, o)
     }

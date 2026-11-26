@@ -737,7 +737,7 @@ private struct PeopleBar: View {
                     .buttonStyle(FlatButton(height: 40)).opacity(nPieces == 0 ? 0.4 : 1).disabled(nPieces == 0)
                 Button { model.requestExport(ExportRequest(kind: .people(find), count: nFiles, run: { [weak find] in
                     guard let find else { return }
-                    model.exportGroups(find.exportGroups(each: find.protoOut == .each))
+                    model.exportGroups(find.exportGroups(each: find.protoOut == .each), names: find.protoNames)
                 })) } label: { Text(L.t("people.export")).frame(maxWidth: .infinity) }
                     .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(nFiles == 0 ? 0.4 : 1).disabled(nFiles == 0)
             }

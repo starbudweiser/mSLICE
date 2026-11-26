@@ -11,6 +11,7 @@ mSLICE bundles two command-line programs, `ffmpeg` and `ffprobe` (in `mSLICE.app
 | mpg123 (décodeur lié à LAME) | 1.32 | GNU LGPL 2.1 | `licenses/mpg123-COPYING.txt` |
 | Opus (encodage Opus) | 1.5 | BSD 3 clauses | `licenses/opus-COPYING.txt` |
 | libvpx (VP8 / VP9) | 1.15 | BSD 3 clauses | `licenses/libvpx-LICENSE.txt` |
+| DeepFilterNet3 (débruitage de la voix, réseau converti en Core ML ; poids inchangés) | 0.5.6 | MIT | `licenses/DeepFilterNet-LICENSE-MIT.txt` |
 
 - Source de FFmpeg : https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz (https://ffmpeg.org/ — code source, correspondant exactement aux binaires, avec la configuration décrite dans `ffmpeg/build_ffmpeg.sh`).
 - H.264, HEVC et ProRes sont encodés par VideoToolbox (matériel d'Apple), l'audio AAC par AudioToolbox : aucun encodeur GPL (x264, x265) n'est embarqué.

@@ -23,7 +23,11 @@ enum Theme {
     static let accentNS = dyn(0x0a84ff, 0x26231e)       // choix actifs : bleu système (sombre), encre (clair)
     static let onAccentNS = dyn(0xffffff, 0xf4f1ec)
     static let brandNS = dyn(0xf08a52, 0xd9622b)        // lettre « m » du nom
-    static let segNS = dyn(0xf08a52, 0xd9622b)          // morceaux sur la timeline
+    static let segNS = dyn(0xf08a52, 0xd9622b)          // morceaux sur la timeline (couleur du morceau n° 2 ; la palette ci-dessous les distingue)
+    /// Une couleur par morceau, dans l'ordre : bleu, orange, vert, violet, cyan, rose (puis on recommence).
+    static let segPaletteNS: [NSColor] = [dyn(0x6670f5, 0x4650e0), segNS, dyn(0x34d058, 0x1fa543), dyn(0xb06af0, 0x8e48d0), dyn(0x3cc8e0, 0x1a9fb8), dyn(0xf06aa8, 0xd04888)]
+    static func segColorNS(_ i: Int) -> NSColor { segPaletteNS[((i % segPaletteNS.count) + segPaletteNS.count) % segPaletteNS.count] }
+    static func segColor(_ i: Int) -> Color { Color(nsColor: segColorNS(i)) }
     static let okNS = dyn(0x30d158, 0x3f8f5a)
     static let warnNS = dyn(0xff9f0a, 0xb7791f)
     static let dangerNS = rgb(0xff453a)
