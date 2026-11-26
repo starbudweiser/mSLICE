@@ -406,13 +406,13 @@ struct ExportBar: View {
                     (Text(n == 1 ? L.t("export.files.one") : L.t("export.files", n)).fontWeight(.semibold).foregroundColor(Theme.text) + Text(" · " + settingsText(o)).foregroundColor(Theme.text2))
                         .font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
                 }
-                Spacer(minLength: 6)
                 if n > 0 { Text("≈ " + Fmt.size(est.bytes)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize() }
+                Spacer(minLength: 0)
             }
             HStack(spacing: 8) {
                 Button { model.exportNow() } label: { Text(doc.segments.count == 1 ? L.t("exp.bar.one") : L.t("exp.bar.n", doc.segments.count)).frame(maxWidth: .infinity) }
                     .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0)
-                Button { model.requestPiecesExport() } label: { SlidersGlyph().stroke(Theme.text, style: StrokeStyle(lineWidth: 1.6, lineCap: .round)).frame(width: 15, height: 15).frame(width: 16) }
+                Button { model.requestPiecesExport() } label: { SlidersGlyph().stroke(Theme.warn, style: StrokeStyle(lineWidth: 1.6, lineCap: .round)).frame(width: 15, height: 15).frame(width: 16) }
                     .buttonStyle(FlatButton(height: 40)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0).help(L.t("exp.settings"))
             }
             if doc.canClean && doc.segments.isEmpty {
