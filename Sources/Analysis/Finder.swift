@@ -237,21 +237,63 @@ final class Finder: @unchecked Sendable {
 
     // MARK: Requête
 
-    func run(_ q: FindQuery) -> FindResult {
+    /// Critère de voix (« voix », « parle ») : ses plages sont les moments précis de la voix, pas la grille de 0,5 s.
+    private func isVoiceTerm(_ t: FindTerm) -> Bool { (t.kind == .voice || t.kind == .speaks) && voices != nil }
+
+    /// Plages précises d'un critère de voix : comblement seulement sans autre voix dedans, bords calés dans les pauses (si le niveau sonore est connu).
+    private func preciseIntervals(_ t: FindTerm, _ profile: LoudnessProfile?) -> [(start: Double, end: Double)] {
+        guard let voices, let g = Int32(t.key), g >= 0 else { return [] }
+        if t.kind == .voice { return voices.hidden.contains(g) ? [] : FaceIndex.merge(voices.moments(of: g, profile: profile), gap: 0.3) }
+        var all: [(start: Double, end: Double)] = []
+        for (v, person) in voices.link where person == g && !voices.hidden.contains(v) { all += voices.moments(of: v, profile: profile) }
+        return FaceIndex.merge(all.sorted { $0.start < $1.start }, gap: 0.3)
+    }
+
+    /// Intersection de deux listes de plages triées et sans recouvrement.
+    static func intersect(_ a: [(start: Double, end: Double)], _ b: [(start: Double, end: Double)]) -> [(start: Double, end: Double)] {
+        var out: [(start: Double, end: Double)] = []
+        var i = 0, j = 0
+        while i < a.count, j < b.count {
+            let s = max(a[i].start, b[j].start), e = min(a[i].end, b[j].end)
+            if e - s > 1e-6 { out.append((s, e)) }
+            if a[i].end < b[j].end { i += 1 } else { j += 1 }
+        }
+        return out
+    }
+
+    /// Plages retenues quand un critère de voix est en jeu : chaque critère donne ses plages (voix : moments précis ; autres : grille, trous comblés), puis on les recoupe. Aucun trou n'est
+    /// comblé AU TRAVERS de la parole d'un autre, et la marge reste faible : les bords des voix sont déjà calés dans les pauses.
+    private func preciseRaw(_ pos: [FindTerm], _ q: FindQuery, _ profile: LoudnessProfile?) -> [(start: Double, end: Double)] {
+        var acc: [(start: Double, end: Double)] = [(0, index.duration)]
+        for t in pos {
+            let iv = isVoiceTerm(t) ? preciseIntervals(t, profile) : intervals(active(t, q), q)
+            acc = Finder.intersect(acc, FaceIndex.merge(iv.sorted { $0.start < $1.start }, gap: 0))
+        }
+        return acc.filter { $0.end - $0.start >= min(q.minLength, 0.5) - 1e-9 }
+    }
+
+    func run(_ q: FindQuery, profile: LoudnessProfile? = nil) -> FindResult {
         let pos = q.positives
         guard !pos.isEmpty else { return FindResult() }
-        var act = [Bool](repeating: true, count: cells)
-        for t in pos { let a = active(t, q); for i in 0 ..< cells { act[i] = act[i] && a[i] } }
-        var raw = intervals(act, q)
+        let precise = pos.contains(where: isVoiceTerm)
+        var raw: [(start: Double, end: Double)]
+        if precise {
+            raw = preciseRaw(pos, q, profile)
+        } else {
+            var act = [Bool](repeating: true, count: cells)
+            for t in pos { let a = active(t, q); for i in 0 ..< cells { act[i] = act[i] && a[i] } }
+            raw = intervals(act, q)
+        }
         if q.wholeShots && index.hasVideo {
             raw = raw.map { (index.shot(at: $0.start + 0.001).start, index.shot(at: max($0.end - 0.001, $0.start)).end) }
         } else {
-            raw = raw.map { (max($0.start - q.margin, 0), min($0.end + q.margin, index.duration)) }
+            let m = precise ? min(q.margin, 0.1) : q.margin
+            raw = raw.map { (max($0.start - m, 0), min($0.end + m, index.duration)) }
         }
         var passages: [(Double, Double)] = []
         for r in raw.sorted(by: { $0.0 < $1.0 }) { if let l = passages.last, r.0 <= l.1 { passages[passages.count - 1].1 = max(l.1, r.1) } else { passages.append(r) } }
 
-        let negs = q.negatives.map { ($0.name, intervals(active($0, q), q)) }
+        let negs = q.negatives.map { ($0.name, isVoiceTerm($0) ? preciseIntervals($0, profile) : intervals(active($0, q), q)) }
         var out: [Passage] = []
         for (n, p) in passages.enumerated() {
             var by: String?

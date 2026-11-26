@@ -432,7 +432,7 @@ with zipfile.ZipFile(d + '/ok.zip', 'w') as z: z.writestr('a.txt', 'x')
             let fnd = Finder(base, faces: f, voices: vl)
             var q = FindQuery(terms: [FindTerm(kind: .voice, key: String(a))]); q.wholeShots = false
             let rv = fnd.run(q)
-            check(rv.passages.count == 2 && abs(rv.keptSeconds - 20) < 4, "recherche : voice:A → 2 passages, \(f1(rv.keptSeconds)) s")
+            check(rv.passages.count == 2 && abs(rv.keptSeconds - 20) < 4, "recherche : voice:A → 2 passages, \(f1(rv.keptSeconds)) s \(rv.passages.map { "\(f1($0.start))-\(f1($0.end))" })")
             q = FindQuery(terms: [FindTerm(kind: .speaks, key: "0")]); q.wholeShots = false
             check(fnd.run(q).passages.count == 2 && fnd.knows(FindTerm(kind: .speaks, key: "0")) && !fnd.knows(FindTerm(kind: .speaks, key: "1")), "recherche : speaks:0 = la voix liée au personnage 0 ; speaks:1 inconnu (aucune voix liée)")
             q = FindQuery(terms: [FindTerm(kind: .alone, key: "0")]); q.wholeShots = false
