@@ -81,7 +81,11 @@ enum VoiceAnalyzer {
         defer { if slot { Task { await AnalysisSlot.shared.release() } } }
         if job.cancelled { return nil }
         guard let embedder = VoiceEmbedder() else { return nil }
-        let url = await Analyzer.source(info)
+        // La piste « voix seules » est fabriquée d'abord si elle manque (une minute de son en ~1 s) : les voix se reconnaissent mieux sans musique.
+        if !CleanVoice.exists(info), CleanVoice.available { _ = await CleanVoice.build(info, job: job, slot: false) { _ in } }
+        if job.cancelled { return nil }
+        // Piste « voix seules » si elle existe (sans musique ni bruits : empreintes plus fiables) ; sinon l'audio d'origine.
+        let url = CleanVoice.exists(info) ? CleanVoice.url(info) : await Analyzer.source(info)
         let t0 = Date()
         let state = ProgressBox(AnalysisProgress(hasVideo: true, hasAudio: false), emit: progress)
         state.update { _ in }

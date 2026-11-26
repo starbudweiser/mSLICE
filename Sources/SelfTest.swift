@@ -74,6 +74,47 @@ enum SelfTest {
             check(r.error == nil && abs(g - 20) < 0.3, "fusion audio m4a (copie directe) : \(String(format: "%.2f", g)) s en \(String(format: "%.1f", s)) s \(r.error ?? "")")
         }
 
+        // 4c. « voix seules » : piste nettoyée fabriquée, puis exports (image copiée + son nettoyé, audio seul, fusion)
+        if info.audio != nil, CleanVoice.available {
+            setenv("MSLICE_CLEAN_DIR", dir.appendingPathComponent("clean").path, 1)
+            let tc = Date()
+            let built = await CleanVoice.build(info, job: AnalysisJob(), slot: false) { _ in }
+            check(built && CleanVoice.exists(info), "piste « voix seules » : fabriquée en \(String(format: "%.1f", Date().timeIntervalSince(tc))) s pour \(Fmt.time(d, decimals: false))")
+            if built {
+                // lecteur : la piste nettoyée remplace le son, la position et la lecture sont conservées, retour au son d'origine possible
+                let pm = PlayerModel()
+                await pm.load(info)
+                pm.seek(3)
+                await pm.setVoiceOnly(true, info: info)
+                let comp = pm.player.currentItem?.asset as? AVMutableComposition
+                let aTracks = (try? await comp?.loadTracks(withMediaType: .audio))?.count ?? 0, vTracks = (try? await comp?.loadTracks(withMediaType: .video))?.count ?? 0
+                check(pm.voiceOnly && aTracks == 1 && vTracks == (info.isAudioOnly ? 0 : 1) && abs(pm.player.currentTime().seconds - 3) < 0.2, "lecteur « voix seules » : \(aTracks) piste audio, \(vTracks) image, position \(String(format: "%.2f", pm.player.currentTime().seconds)) s")
+                pm.play(); try? await Task.sleep(nanoseconds: 1_200_000_000)
+                let moved = pm.player.currentTime().seconds
+                pm.pause()
+                check(moved > 3.5, "lecteur « voix seules » : la lecture avance (\(String(format: "%.2f", moved)) s)")
+                await pm.setVoiceOnly(false, info: info)
+                check(!pm.voiceOnly && !(pm.player.currentItem?.asset is AVMutableComposition), "lecteur : retour au son d'origine")
+                let vseg = [seg(5, min(15, d - 1))], vlen = vseg[0].end - vseg[0].start
+                var ov = ExportOptions(); ov.voiceOnly = true; ov.passthrough = true
+                let (r1, o1, _) = await export(vseg, ov)
+                if let u = o1.first?.url, let oi = Probe.read(u) {
+                    let sameV = oi.isAudioOnly == info.isAudioOnly && oi.video?.codec == info.video?.codec
+                    check(r1.error == nil && abs(oi.duration - (o1.first?.expected ?? vlen)) < 0.5 && oi.audio?.channels == 1 && sameV, "voix seules, copie directe : \(String(format: "%.2f", oi.duration)) s, audio \(oi.audio?.codec ?? "?") \(oi.audio?.channels ?? 0) canal, image \(oi.video?.codec ?? "aucune") \(r1.error ?? "")")
+                } else { check(false, "voix seules, copie directe : fichier absent \(r1.error ?? "")") }
+                var oa = ExportOptions(); oa.voiceOnly = true; oa.passthrough = false; oa.format = .mp3
+                let (r2, o2, _) = await export(vseg, oa)
+                let g2 = o2.first.flatMap { Probe.read($0.url) }?.duration ?? -1
+                check(r2.error == nil && abs(g2 - vlen) < 0.3, "voix seules, mp3 : \(String(format: "%.2f", g2)) s \(r2.error ?? "")")
+                var om = ExportOptions(); om.voiceOnly = true; om.passthrough = true; om.merge = true
+                let mseg = [seg(2, 8), seg(min(20, d - 10), min(26, d - 4))]
+                let (r3, o3, _) = await export(mseg, om)
+                let g3 = o3.first.flatMap { Probe.read($0.url) }
+                let want3 = o3.first?.expected ?? 0
+                check(r3.error == nil && abs((g3?.duration ?? -1) - want3) < 0.8 && g3?.audio?.channels == 1, "voix seules, fusion : \(String(format: "%.2f", g3?.duration ?? -1)) s (attendu \(String(format: "%.2f", want3))) \(r3.error ?? "")")
+            }
+        }
+
         // 5. recompression H.264 / H.265 (VideoToolbox) sur 10 s, puis fusion recompressée
         if !info.isAudioOnly {
             for c in [VideoCodec.h264, .hevc] {

@@ -116,7 +116,7 @@ enum AnalysisRunner {
 
 /// Côté processus d'analyse (`mslice-mcp --analyze <fichier>`) : progression en JSON sur la sortie standard, ordres sur l'entrée standard.
 enum AnalysisChild {
-    static func main(path: String, faces: Bool = false, voices: Bool = false) -> Never {
+    static func main(path: String, faces: Bool = false, voices: Bool = false, clean: Bool = false) -> Never {
         setvbuf(stdout, nil, _IOLBF, 0)
         func say(_ o: [String: Any]) {
             guard JSONSerialization.isValidJSONObject(o), let d = try? JSONSerialization.data(withJSONObject: o), let s = String(data: d, encoding: .utf8) else { return }
@@ -134,7 +134,10 @@ enum AnalysisChild {
             let report: @Sendable (AnalysisProgress) -> Void = { p in
                 say(["i": p.images, "s": p.sounds, "t": p.imagesTime, "ss": p.soundsSeconds, "p": p.paused, "mb": p.memoryMB])
             }
-            let seconds: Double? = voices
+            let t0 = Date()
+            let seconds: Double? = clean
+                ? (await CleanVoice.build(info, job: job, slot: false, progress: { say(["s": $0]) }) ? Date().timeIntervalSince(t0) : nil)
+                : voices
                 ? await VoiceAnalyzer.run(info, job: job, slot: false, progress: report)?.seconds
                 : faces
                 ? await FaceAnalyzer.run(info, job: job, slot: false, progress: report)?.seconds

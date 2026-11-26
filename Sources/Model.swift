@@ -43,9 +43,14 @@ struct ExportOptions: Codable, Equatable {
     var folder: String? = nil             // nil : même dossier que l'original
     var suffix = "extrait"                // nom du fichier fusionné : <nom>_<suffixe>
     var digits = 2                        // numérotation : _01, _02…
+    var voiceOnly = false                 // « voix seules » : l'audio exporté est la piste nettoyée (`CleanVoice`) ; jamais mémorisé d'un lancement à l'autre
+
+    private enum CodingKeys: String, CodingKey { case merge, passthrough, format, codec, quality, folder, suffix, digits }
 
     /// Format effectif quand on recompresse : « Identique » devient MP4 (ou M4A pour un fichier audio).
+    /// Avec « voix seules », l'audio est toujours réencodé : un audio seul d'un format inconnu (wma, ac3…) sort en M4A.
     func resolvedFormat(for info: MediaInfo) -> OutFormat {
+        if voiceOnly, format == .same, info.isAudioOnly, OutFormat(rawValue: info.ext.lowercased()) == nil { return .m4a }
         if format != .same || passthrough { return format }
         return info.isAudioOnly ? .m4a : .mp4
     }

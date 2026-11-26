@@ -9,6 +9,8 @@ if let i = CommandLine.arguments.firstIndex(of: "--analyze"), CommandLine.argume
 if let i = CommandLine.arguments.firstIndex(of: "--faces"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1], faces: true) }
 // `mslice-mcp --voices <fichier>` : reconnaissance des voix (modèle optionnel)
 if let i = CommandLine.arguments.firstIndex(of: "--voices"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1], voices: true) }
+// `mslice-mcp --clean <fichier>` : piste « voix seules » (isolation de voix de macOS), mise en cache
+if let i = CommandLine.arguments.firstIndex(of: "--clean"), CommandLine.arguments.indices.contains(i + 1) { AnalysisChild.main(path: CommandLine.arguments[i + 1], clean: true) }
 // `mslice-mcp --dialogues <fichier> <langue> <sortie.json>` : transcription de la parole en répliques (macOS 26)
 if let i = CommandLine.arguments.firstIndex(of: "--dialogues"), CommandLine.arguments.indices.contains(i + 3) {
     DialoguesChild.main(path: CommandLine.arguments[i + 1], language: CommandLine.arguments[i + 2], out: CommandLine.arguments[i + 3])

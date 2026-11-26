@@ -263,6 +263,7 @@ final class FindModel: ObservableObject {
             let v = await AnalysisRunner.runVoices(info, job: job) { p in Task { @MainActor [weak self] in if self?.recognizingVoices == true { self?.voicesProgress = p } } }
             guard let self else { return }
             self.recognizingVoices = false; self.voiceJob = nil
+            if CleanVoice.exists(info), self.doc.clean == .none || self.doc.clean == .failed { self.doc.clean = .ready }
             if let v { self.setVoices(v, keepTerms: false) } else if !job.cancelled { self.voicesFailed = true }
         }
     }

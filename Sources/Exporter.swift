@@ -151,9 +151,11 @@ enum Planner {
     }
 
     /// Sélection des flux et codecs pour un export (hors positionnement).
-    static func streamArgs(info: MediaInfo, fmt: OutFormat, opts: ExportOptions) -> [String] {
+    static func streamArgs(info: MediaInfo, fmt: OutFormat, opts: ExportOptions, voice: Bool = false) -> [String] {
         let outExt = fmt.ext(source: info.ext)
         if fmt.isAudio || info.isAudioOnly {
+            // « voix seules » : la piste nettoyée est la seule entrée (0), toujours réencodée
+            if voice { return ["-vn", "-map", "0:a:0"] + audioEncode(fmt, ext: outExt, video: false) }
             var a = ["-vn", "-map", "0:a:0"]
             if opts.passthrough { return a + ["-c:a", "copy"] }
             switch fmt {
@@ -169,16 +171,17 @@ enum Planner {
         }
         if opts.passthrough {
             // Flux explicites : la pochette attachée (image fixe) fausserait la durée et le recalage des temps des morceaux fusionnés.
-            var a = ["-map", "0:\(info.video?.index ?? 0)", "-map", "0:a?"]
+            var a = ["-map", "0:\(info.video?.index ?? 0)", "-map", voice ? "1:a:0" : "0:a?"]
             let sameBox = outExt == info.ext
             if sameBox || fmt == .mkv { a += ["-map", "0:s?"] }
             if sameBox && outExt == "mov" { a += ["-map", "0:d?"] }          // timecode des fichiers MOV
             a += ["-c", "copy"]
+            if voice { a += audioEncode(fmt, ext: outExt, video: true) }
             if info.video?.codec == "hevc", fmt == .mp4 || fmt == .mov || (fmt == .same && ["mp4", "mov", "m4v"].contains(info.ext)) { a += ["-tag:v", "hvc1"] }
             return a
         }
         let codec = codecFor(fmt, opts.codec)
-        var a = ["-map", "0:v:0", "-map", "0:a?"]
+        var a = ["-map", "0:v:0", "-map", voice ? "1:a:0" : "0:a?"]
         let br = "\(videoBitrate(info, quality: opts.quality, codec: codec))k"
         switch codec {
         case .h264: a += ["-c:v", "h264_videotoolbox", "-b:v", br, "-profile:v", "high", "-allow_sw", "1"]
@@ -194,12 +197,34 @@ enum Planner {
         return a + ["-sn", "-dn"]
     }
 
+    /// Encodage de l'audio quand il est refait (piste « voix seules » : mono, 48 kHz).
+    static func audioEncode(_ fmt: OutFormat, ext: String, video: Bool) -> [String] {
+        let f = fmt == .same ? (OutFormat(rawValue: ext.lowercased()) ?? .mp4) : fmt
+        switch f {
+        case .mp3: return ["-c:a", "libmp3lame", "-q:a", "2"]
+        case .wav: return ["-c:a", "pcm_s16le"]
+        case .aiff: return ["-c:a", "pcm_s16be"]
+        case .flac: return ["-c:a", "flac"]
+        case .opus: return ["-c:a", "libopus", "-b:a", "160k"]
+        case .webm: return ["-c:a", "libopus", "-b:a", "128k"]
+        default: return ["-c:a", "aac_at", "-b:a", video ? "192k" : "256k"]
+        }
+    }
+
     static func commands(info: MediaInfo, item: OutputItem, opts: ExportOptions, keyframes: [Double] = []) -> [Cmd] {
         let fmt = opts.resolvedFormat(for: info)
-        let streams = streamArgs(info: info, fmt: fmt, opts: opts)
+        let clean: URL? = opts.voiceOnly && CleanVoice.exists(info) ? CleanVoice.url(info) : nil
+        let streams = streamArgs(info: info, fmt: fmt, opts: opts, voice: clean != nil)
         let src = info.url.path
         func single(_ s: Segment, to out: URL) -> Cmd {
             let start = max(s.start, 0), dur = max(s.duration, 0.001)
+            if let clean {
+                // Sortie audio : seule la piste nettoyée est lue. Sortie vidéo : l'image de l'original (copie ou recompression) et le son de la piste nettoyée,
+                // chacun cherché au même instant (le début d'un morceau en copie directe est déjà l'image clé, voir `outputs`).
+                let isAudioOut = fmt.isAudio || info.isAudioOnly
+                let inputs = isAudioOut ? ["-ss", f(start), "-i", clean.path] : ["-ss", f(start), "-i", src, "-ss", f(start), "-i", clean.path]
+                return Cmd(args: common + inputs + ["-t", f(dur)] + streams + (opts.passthrough ? ["-avoid_negative_ts", "make_zero"] : []) + [out.path], out: out, expected: dur)
+            }
             var pre = ["-ss", f(start)], post: [String] = []
             // Audio copié depuis une vidéo : la recherche se fait sur l'image clé (flux vidéo). On se place sur l'image clé exacte,
             // puis on saute le reste en sortie, pour que le morceau commence vraiment à l'entrée demandée.
@@ -212,7 +237,7 @@ enum Planner {
         }
         if item.segments.count == 1 { return [single(item.segments[0], to: item.url)] }
         let outExt = item.url.pathExtension
-        if opts.passthrough, !(fmt.isAudio && !info.isAudioOnly) {
+        if opts.passthrough, clean == nil, !(fmt.isAudio && !info.isAudioOnly) {
             // Un seul passage : le démultiplexeur « concat » lit directement les morceaux de l'original.
             let list = FileManager.default.temporaryDirectory.appendingPathComponent("mslice-\(UUID().uuidString).ffconcat")
             var text = "ffconcat version 1.0\n"

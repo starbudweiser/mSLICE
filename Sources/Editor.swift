@@ -17,6 +17,9 @@ final class Doc: ObservableObject, Identifiable {
     @Published var exported = false
     @Published var viewStart = 0.0
     @Published var viewSpan: Double
+    @Published var clean: CleanState = .none
+    @Published var voiceOnly = false          // on écoute la piste « voix seules » (le lecteur la suit)
+    private var cleanJob: AnalysisJob?
     let peaks = PeakStore()
     let strip: Filmstrip
     let cancel = CancelToken()
@@ -40,7 +43,28 @@ final class Doc: ObservableObject, Identifiable {
         let session = SessionStore.load(info)
         segments = session.segments; baseName = session.baseName ?? ""; mergeName = session.mergeName ?? ""
         selected = segments.first?.id
+        if CleanVoice.exists(info) { clean = .ready }
     }
+
+    /// Peut-on isoler les voix de ce fichier (il a du son, macOS sait le faire) ?
+    var canClean: Bool { info.audio != nil && CleanVoice.available }
+
+    /// Fabrique la piste « voix seules » en arrière-plan ; `done(vrai)` à la fin. Sans effet si elle est prête ou en cours (alors `done` attend la fin).
+    func buildClean(done: (@MainActor (Bool) -> Void)? = nil) {
+        if clean == .ready { done?(true); return }
+        guard canClean else { AppModel.shared.flash(L.t("clean.unavailable")); done?(false); return }
+        if case .building = clean { return }
+        let job = AnalysisJob(); cleanJob = job; clean = .building(0)
+        Task {
+            let ok = await CleanVoice.build(info, job: job) { p in Task { @MainActor [weak self] in if case .building = self?.clean { self?.clean = .building(p) } } }
+            cleanJob = nil
+            if ok { clean = .ready }
+            else if job.cancelled { clean = .none }
+            else { clean = .failed; AppModel.shared.flash(L.t("clean.failed")) }
+            done?(ok)
+        }
+    }
+    func cancelClean() { cleanJob?.cancel() }
 
     func loadBackground() {
         let strip = self.strip, cancel = self.cancel
@@ -149,6 +173,9 @@ final class Doc: ObservableObject, Identifiable {
 
 enum Sheet: Equatable { case none, export, done }
 
+/// Piste « voix seules » d'un fichier (voir `CleanVoice`) : absente, en calcul (0…1), prête ou en échec.
+enum CleanState: Equatable { case none, building(Double), ready, failed }
+
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
@@ -198,11 +225,24 @@ final class AppModel: ObservableObject {
     func select(_ d: Doc) {
         guard current !== d else { return }
         current = d
-        Task { await player.load(d.info) }
+        Task {
+            await player.load(d.info)
+            if d.voiceOnly, current === d { await player.setVoiceOnly(true, info: d.info) }       // le choix suit le fichier quand on revient dessus
+        }
+    }
+
+    /// Écoute la piste « voix seules » (la fabrique d'abord si besoin) ou revient au son d'origine.
+    func setVoiceOnly(_ on: Bool, for d: Doc) {
+        if !on { d.voiceOnly = false; if current === d { Task { await player.setVoiceOnly(false, info: d.info) } }; return }
+        d.buildClean { [weak self, weak d] ok in
+            guard ok, let self, let d else { return }
+            d.voiceOnly = true
+            if self.current === d { Task { await self.player.setVoiceOnly(true, info: d.info) } }
+        }
     }
 
     func close(_ d: Doc) {
-        d.cancel.cancel(); d.find.cancel(); d.dialogues.cancel()
+        d.cancel.cancel(); d.find.cancel(); d.dialogues.cancel(); d.cancelClean()
         docs.removeAll { $0 === d }
         if current === d { current = nil; player.pause(); if let n = docs.first { select(n) } }
     }
@@ -220,13 +260,25 @@ final class AppModel: ObservableObject {
 
     // MARK: Export
 
-    var canExport: Bool { current.map { !$0.segments.isEmpty } ?? false && sheet == .none }
+    var canExport: Bool {
+        guard let d = current, !d.segments.isEmpty, sheet == .none else { return false }
+        return !(opts.voiceOnly && d.info.audio != nil && d.clean != .ready)          // « voix seules » : on attend la fin du calcul de la piste
+    }
+
+    /// Options d'un export de `d` : « voix seules » seulement si le fichier a du son et si la piste est prête (sinon on la lance et on renonce).
+    private func exportOptions(for d: Doc) -> ExportOptions? {
+        var o = opts
+        if o.voiceOnly {
+            if d.info.audio == nil { o.voiceOnly = false }
+            else if d.clean != .ready { d.buildClean(); flash(L.t("clean.notready")); return nil }
+        }
+        return o
+    }
 
     func exportNow() {
-        guard let d = current, !d.segments.isEmpty, sheet == .none else { return }
-        var o = opts
-        // La copie directe n'est possible que si les codecs entrent dans le conteneur choisi.
-        if o.passthrough, !Planner.canCopy(info: d.info, to: o.format) { flash(L.t("err.cantcopy")); return }
+        guard let d = current, !d.segments.isEmpty, sheet == .none, var o = exportOptions(for: d) else { return }
+        // La copie directe n'est possible que si les codecs entrent dans le conteneur choisi (l'audio refait par « voix seules » n'est pas copié).
+        if o.passthrough, !Planner.canCopy(info: d.info, to: o.format), !o.voiceOnly { flash(L.t("err.cantcopy")); return }
         if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
         if !o.passthrough, o.format == .same { o.format = d.info.isAudioOnly ? .m4a : .mp4 }
         let outs = Planner.outputs(info: d.info, segments: d.segments, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: d.mergeName)
@@ -235,9 +287,9 @@ final class AppModel: ObservableObject {
 
     /// Exporte directement des groupes de moments choisis dans l'onglet Trouver (un fichier par groupe, chacun fusionné), sans toucher aux morceaux du fichier.
     func exportGroups(_ groups: [(name: String, segments: [(start: Double, end: Double)])]) {
-        guard let d = current, sheet == .none, groups.contains(where: { !$0.segments.isEmpty }) else { return }
-        var o = opts; o.merge = true
-        if o.passthrough, !Planner.canCopy(info: d.info, to: o.format) { flash(L.t("err.cantcopy")); return }
+        guard let d = current, sheet == .none, groups.contains(where: { !$0.segments.isEmpty }), var o = exportOptions(for: d) else { return }
+        o.merge = true
+        if o.passthrough, !Planner.canCopy(info: d.info, to: o.format), !o.voiceOnly { flash(L.t("err.cantcopy")); return }
         if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
         if !o.passthrough, o.format == .same { o.format = d.info.isAudioOnly ? .m4a : .mp4 }
         let base = Planner.sanitize(d.baseName.isEmpty ? d.info.url.deletingPathExtension().lastPathComponent : d.baseName)

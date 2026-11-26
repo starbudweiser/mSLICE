@@ -224,7 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Essais sans fenêtre
 
-    /// `mSLICE --capture out.png --open fichier [--time 125.3] [--segments 15-60,120-150] [--state export|done|shortcuts] [--theme dark|light] [--wait 4]`
+    /// `mSLICE --capture out.png --open fichier [--time 125.3] [--segments 15-60,120-150] [--voiceonly] [--state export|done|shortcuts] [--theme dark|light] [--wait 4]`
     func snapshot(to path: String) {
         guard let w = window, let v = w.contentView else { return }
         v.frame = NSRect(origin: .zero, size: w.frame.size); v.layoutSubtreeIfNeeded()
@@ -246,6 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 if let n = self.arg("--names") { for (i, nm) in n.split(separator: ",", omittingEmptySubsequences: false).enumerated() where d.segments.indices.contains(i) && !nm.isEmpty { d.segments[i].name = String(nm) } }
                 if let b = self.arg("--base") { d.baseName = b }
+                if self.arg("--voiceonly") != nil { model.opts.voiceOnly = true; d.buildClean { ok in if ok { model.setVoiceOnly(true, for: d) } } }       // « voix seules » : piste prête, bouton et case cochés
                 if let t = self.arg("--time").flatMap(Double.init) { model.player.seek(t) }
             }
             if self.arg("--state") == "shortcuts" { model.showShortcuts = true }

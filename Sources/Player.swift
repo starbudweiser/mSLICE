@@ -21,6 +21,8 @@ final class PlayerModel: ObservableObject {
     private var pending: (Double, Bool)?
     private var endObserver: NSObjectProtocol?
     private var loadToken = UUID()
+    private var baseURL: URL?                 // ce que le lecteur joue (original ou proxy), pour recomposer l'item avec la piste « voix seules »
+    @Published private(set) var voiceOnly = false
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = false
@@ -50,8 +52,41 @@ final class PlayerModel: ObservableObject {
         let url = await Proxies.playableURL(info) { [weak self] in Task { @MainActor in self?.preparing = L.t("preview.preparing") } }
         guard token == loadToken else { return }
         preparing = nil
+        baseURL = url; voiceOnly = false
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         await scrubber.prepare(url: url, hasVideo: !info.isAudioOnly)
+    }
+
+    /// Joue la piste « voix seules » (image de l'original, son de `CleanVoice`) ou revient au son d'origine ; la position et la lecture sont conservées.
+    func setVoiceOnly(_ on: Bool, info: MediaInfo) async {
+        guard let url = baseURL, on != voiceOnly else { return }
+        let token = loadToken
+        var item = AVPlayerItem(url: url), applied = false
+        if on, CleanVoice.exists(info), let comp = await Self.composition(video: url, voice: CleanVoice.url(info), hasVideo: !info.isAudioOnly) { item = AVPlayerItem(asset: comp); applied = true }
+        guard token == loadToken, baseURL == url else { return }
+        let t = player.currentTime(), wasPlaying = isPlaying, r = rate
+        player.replaceCurrentItem(with: item)
+        voiceOnly = applied
+        await player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)
+        if wasPlaying, token == loadToken { play(rate: r) }
+    }
+
+    private static func composition(video: URL, voice: URL, hasVideo: Bool) async -> AVMutableComposition? {
+        let comp = AVMutableComposition()
+        let vAsset = AVURLAsset(url: video), cAsset = AVURLAsset(url: voice)
+        do {
+            let vDur = try await vAsset.load(.duration)
+            if hasVideo, let vt = try await vAsset.loadTracks(withMediaType: .video).first,
+               let ct = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                try ct.insertTimeRange(CMTimeRange(start: .zero, duration: vDur), of: vt, at: .zero)
+                ct.preferredTransform = try await vt.load(.preferredTransform)
+            }
+            guard let at = try await cAsset.loadTracks(withMediaType: .audio).first,
+                  let cat = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
+            let aDur = try await cAsset.load(.duration)
+            try cat.insertTimeRange(CMTimeRange(start: .zero, duration: min(vDur, aDur)), of: at, at: .zero)
+            return comp
+        } catch { return nil }
     }
 
     // MARK: Commandes

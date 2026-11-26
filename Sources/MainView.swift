@@ -276,6 +276,10 @@ struct TimelineCard: View {
                     .help(L.t("tl.snap.help"))
                 if dialogues.hasLines { Button { dialogues.showLane.toggle() } label: { Chip(text: L.t("dlg.lane.chip"), on: dialogues.showLane) }.buttonStyle(.plain) }
                 Button { Task { await autoTrim() } } label: { Chip(text: L.t("tl.auto"), enabled: doc.info.audio != nil) }.buttonStyle(.plain)
+                if doc.canClean {
+                    Button { if case .building = doc.clean { doc.cancelClean() } else { model.setVoiceOnly(!doc.voiceOnly, for: doc) } } label: { Chip(text: cleanChipText, on: doc.voiceOnly) }
+                        .buttonStyle(.plain).help(L.t("clean.help"))
+                }
                 Spacer(minLength: 0)
             }.frame(height: 26).padding(.bottom, 4)
             TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.height(lane: !find.lane.isEmpty, dialogues: dialogues.laneVisible))
@@ -288,6 +292,10 @@ struct TimelineCard: View {
         .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous).strokeBorder(Theme.line, lineWidth: 0.5))
+    }
+    private var cleanChipText: String {
+        if case .building(let p) = doc.clean { return L.t("clean.chip.building", Int((p * 100).rounded())) }
+        return L.t("clean.chip")
     }
     /// Un morceau entre le silence d'ouverture et le silence de fin.
     private func autoTrim() async {
@@ -416,6 +424,7 @@ struct ExportCard: View {
                 if model.opts.passthrough { fmtChip(.same) }
                 ForEach(OutFormat.video + OutFormat.audio, id: \.self) { fmtChip($0) }
             }
+            if doc.canClean { voiceRow }
             if !model.opts.passthrough, !eff.resolvedFormat(for: info).isAudio, !info.isAudioOnly {
                 row(L.t("export.codec")) {
                     Menu {
@@ -436,6 +445,21 @@ struct ExportCard: View {
         }
     }
     private var eff: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
+    /// « Voix seules » : l'audio exporté est la piste sans musique ni bruits (calculée à la demande, gardée ensuite).
+    private var voiceRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Button { model.opts.voiceOnly.toggle(); if model.opts.voiceOnly, doc.clean == .none || doc.clean == .failed { doc.buildClean() } } label: { Chip(text: L.t("clean.export"), on: model.opts.voiceOnly) }.buttonStyle(.plain)
+                Spacer(minLength: 0)
+                switch doc.clean {
+                case .building(let p): Text(L.t("clean.building", Int((p * 100).rounded()))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2)
+                case .ready: Text(L.t("clean.ready")).font(.system(size: 11.5)).foregroundStyle(Theme.text2)
+                default: EmptyView()
+                }
+            }
+            if model.opts.voiceOnly { Text(L.t("clean.exportNote")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
+        }
+    }
     private var passthroughBinding: Binding<Bool> {
         Binding(get: { model.opts.passthrough }, set: { v in
             model.opts.passthrough = v
@@ -485,7 +509,7 @@ struct ExportCard: View {
         let info = doc.info
         var ok = true
         if info.isAudioOnly && !f.isAudio && f != .same { ok = false }
-        if model.opts.passthrough, ok { ok = Planner.canCopy(info: info, to: f) }
+        if model.opts.passthrough, !model.opts.voiceOnly, ok { ok = Planner.canCopy(info: info, to: f) }
         let on = model.opts.format == f || (!model.opts.passthrough && model.opts.format == .same && f == (info.isAudioOnly ? .m4a : .mp4))
         return Button { if ok { model.opts.format = f } } label: {
             Text(f.title).font(.system(size: 11.5, weight: on ? .semibold : .regular)).lineLimit(1).padding(.horizontal, 9).frame(height: 24)
