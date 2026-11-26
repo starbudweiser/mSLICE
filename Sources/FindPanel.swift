@@ -154,19 +154,59 @@ private struct ResultsView: View {
     @State private var allSounds = false
     private let limit = 8
 
+    @State private var showThemes = false
+    @State private var showSetup = false
+
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 10) {
-                if let a = find.added { AddedCard(info: a, openEdit: openEdit) }
-                headerCard
-                if doc.info.video != nil { CharactersCard(find: find) }
-                if doc.info.audio != nil { VoicesCard(find: find) }
-                if !find.suggestions.isEmpty { SuggestionsCard(find: find) }
-                if !find.protagonists.isEmpty { ProtagonistsCard(model: model, doc: doc, find: find) }
-                if doc.info.video != nil { listCard(title: "find.scenes", rows: find.summary.scenes, all: $allScenes, sound: false) }
-                if doc.info.audio != nil { listCard(title: "find.sounds", rows: find.summary.sounds, all: $allSounds, sound: true) }
+        VStack(spacing: 10) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 10) {
+                    if let a = find.added { AddedCard(info: a, openEdit: openEdit) }
+                    if find.protagonists.isEmpty {
+                        // pas encore de personnes : les cartes de mise en route (modèle à installer, reconnaissance à lancer)
+                        if doc.info.video != nil { CharactersCard(find: find) }
+                        if doc.info.audio != nil { VoicesCard(find: find) }
+                    } else {
+                        ProtagonistsCard(model: model, doc: doc, find: find)
+                        if !find.suggestions.isEmpty { SuggestionsCard(find: find) }
+                        if doc.info.video != nil, find.faces == nil { CharactersCard(find: find) }
+                        if doc.info.audio != nil, find.voices == nil { VoicesCard(find: find) }
+                    }
+                    fold(L.t("people.fold.themes"), open: $showThemes) {
+                        if doc.info.video != nil { listCard(title: "find.scenes", rows: find.summary.scenes, all: $allScenes, sound: false) }
+                        if doc.info.audio != nil { listCard(title: "find.sounds", rows: find.summary.sounds, all: $allSounds, sound: true) }
+                    }
+                    fold(setupSummary, open: $showSetup) {
+                        if doc.info.video != nil, !find.protoSel.isEmpty { WholeShotsRow(find: find) }
+                        headerCard
+                        if doc.info.video != nil, find.faces != nil { CharactersCard(find: find, lists: false) }
+                        if doc.info.audio != nil, find.voices != nil { VoicesCard(find: find, lists: false) }
+                    }
+                }
             }
+            if !find.protoSel.isEmpty { PeopleBar(model: model, find: find) }
         }
+    }
+
+    /// État de la reconnaissance, en une ligne repliée : les cartes de réglage (installer, supprimer, relancer) ne s'ouvrent que sur demande.
+    private var setupSummary: String {
+        func mark(_ on: Bool) -> String { on ? "✓" : "–" }
+        var parts: [String] = []
+        if doc.info.video != nil { parts.append(L.t("people.setup.faces") + " " + mark(find.faces != nil)) }
+        if doc.info.audio != nil { parts.append(L.t("people.setup.voices") + " " + mark(find.voices != nil)) }
+        return L.t("people.fold.setup") + " · " + parts.joined(separator: " · ")
+    }
+
+    private func fold<C: View>(_ title: String, open: Binding<Bool>, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(spacing: 10) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { open.wrappedValue.toggle() } } label: {
+                HStack { Text(title).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1); Spacer(minLength: 6)
+                    Image(systemName: open.wrappedValue ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.text2) }
+                    .frame(height: 28).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if open.wrappedValue { content() }
+        }
+        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 0.5) }
     }
 
     private var headerCard: some View {
@@ -293,6 +333,7 @@ private struct Avatar: View {
 
 private struct CharactersCard: View {
     @ObservedObject var find: FindModel
+    var lists = true                  // faux : carte de réglage seule (installer, supprimer, relancer), sans la grille de visages
     @ObservedObject private var store = ModelStore.shared
     private let spec = ModelCatalog.characters
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6, alignment: .top), count: 3)
@@ -317,7 +358,8 @@ private struct CharactersCard: View {
     @ViewBuilder private var content: some View {
         if find.recognizing { running }
         else if find.faces != nil {
-            if find.characters.isEmpty { note(L.t("find.chars.none")) }
+            if !lists { EmptyView() }
+            else if find.characters.isEmpty { note(L.t("find.chars.none")) }
             else {
                 LazyVGrid(columns: columns, spacing: 4) { ForEach(find.characters.prefix(24)) { Avatar(row: $0, find: find) } }
                 note(L.t("find.chars.hint"))
@@ -365,6 +407,7 @@ private struct CharactersCard: View {
 
 private struct VoicesCard: View {
     @ObservedObject var find: FindModel
+    var lists = true                  // faux : carte de réglage seule, sans la liste des voix
     @ObservedObject private var store = ModelStore.shared
     private let spec = ModelCatalog.voices
     private var modelState: ModelStore.State { spec.available ? store.state(spec) : .notInstalled }
@@ -387,7 +430,8 @@ private struct VoicesCard: View {
     @ViewBuilder private var content: some View {
         if find.recognizingVoices { running }
         else if find.voices != nil {
-            if find.voiceRows.isEmpty { note(L.t("find.voices.none")) }
+            if !lists { EmptyView() }
+            else if find.voiceRows.isEmpty { note(L.t("find.voices.none")) }
             else { VStack(spacing: 2) { ForEach(find.voiceRows.prefix(12)) { VoiceLine(row: $0, find: find) } } }
             if case .installed = modelState { installedRow }
         } else {
@@ -565,6 +609,35 @@ private struct ProtagonistLine: View {
         .contextMenu {
             Button(L.t("find.chars.rename")) { draft = p.name ?? ""; editing = true }
             if p.sample != nil { Button(L.t("find.voices.listen")) { find.listen(at: p.sample) } }
+            if let person = p.person {
+                Menu(L.t("find.chars.merge")) {
+                    ForEach(find.characters.filter { $0.id != person }) { other in
+                        Button(other.title) {
+                            let mine = find.characters.first { $0.id == person }?.seconds ?? 0
+                            let (keep, drop) = mine >= other.seconds ? (person, other.id) : (other.id, person)
+                            find.merge(drop, into: keep)
+                        }
+                    }
+                }.disabled(find.characters.count < 2)
+                Button(L.t("find.chars.split")) { find.split(person) }.disabled(!find.canSplit(person))
+            }
+            if let v = p.voice {
+                Menu(L.t("find.voices.merge")) {
+                    ForEach(find.voiceRows.filter { $0.id != v }) { other in
+                        Button(other.title) {
+                            let mine = find.voiceRows.first { $0.id == v }?.seconds ?? 0
+                            let (keep, drop) = mine >= other.seconds ? (v, other.id) : (other.id, v)
+                            find.mergeVoice(drop, into: keep)
+                        }
+                    }
+                }.disabled(find.voiceRows.count < 2)
+                if p.person == nil {
+                    Menu(L.t("find.voices.link")) { ForEach(find.characters) { c in Button(c.title) { find.linkVoice(v, to: c.id) } } }.disabled(find.characters.isEmpty)
+                } else { Button(L.t("find.voices.unlink")) { find.linkVoice(v, to: nil) } }
+            }
+            Divider()
+            if let person = p.person { Button(L.t("find.chars.hide")) { find.hide(person) } }
+            if let v = p.voice { Button(L.t("find.voices.hide")) { find.hideVoice(v) } }
         }
         .popover(isPresented: $editing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
@@ -598,46 +671,60 @@ private struct ProtagonistsCard: View {
     @ObservedObject var find: FindModel
 
     var body: some View {
-        Card(spacing: 8) {
+        Card(spacing: 6) {
             HStack(spacing: 8) {
-                SectionTitle("\(L.t("find.proto.title")) · \(find.protagonists.count)")
+                SectionTitle("\(L.t("people.title")) · \(find.protagonists.count)")
                 Spacer(minLength: 4)
-                if !find.protoSel.isEmpty { Button { find.clearProtos() } label: { Text(L.t("find.back")).font(.system(size: 11.5)).foregroundStyle(Theme.text2) }.buttonStyle(.plain) }
+                if !find.protoSel.isEmpty { Button { find.clearProtos() } label: { Text(L.t("people.clear")).font(.system(size: 11.5)).foregroundStyle(Theme.text2) }.buttonStyle(.plain) }
             }
             VStack(spacing: 2) { ForEach(find.protagonists.prefix(24)) { ProtagonistLine(p: $0, find: find) } }
-            if find.protoSel.isEmpty { Text(L.t("find.proto.hint")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
-            else { options }
+            if find.protoSel.isEmpty { Text(L.t("people.hint")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).padding(.top, 2) }
         }
     }
+}
 
-    @ViewBuilder private var options: some View {
-        let modes = find.availableModes
+/// « Plans entiers » : garder le plan complet plutôt que l'instant exact où la personne apparaît ou parle.
+private struct WholeShotsRow: View {
+    @ObservedObject var find: FindModel
+    var body: some View {
+        Card(spacing: 4) {
+            HStack(spacing: 8) { Text(L.t("find.proto.whole")).font(.system(size: 12)); Spacer(minLength: 6); FlatSwitch(isOn: $find.protoWhole) }
+            Text(L.t("people.whole.help")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Barre du bas de l'onglet : le résumé de ce qui est choisi, puis ajouter aux morceaux ou exporter (même feuille d'options que l'onglet Couper).
+private struct PeopleBar: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var find: FindModel
+
+    var body: some View {
+        let each = find.protoOut == .each
         let pieces = find.protoPieces
         let union = find.protoUnion
-        let each = find.protoOut == .each
         let nFiles = each ? pieces.filter { !$0.segments.isEmpty }.count : (union.isEmpty ? 0 : 1)
         let nPieces = each ? pieces.reduce(0) { $0 + $1.segments.count } : union.count
-        let total = each ? pieces.reduce(0.0) { $0 + $1.segments.reduce(0.0) { $0 + ($1.end - $1.start) } } : union.reduce(0.0) { $0 + ($1.end - $1.start) }
-        Divider().overlay(Theme.line).padding(.vertical, 2)
-        SectionTitle(L.t("find.proto.keep"))
-        Segmented(options: modes.map { ($0, L.t("find.proto." + $0.rawValue)) }, selection: $find.protoMode)
-        Text(L.t("find.proto.help." + find.protoMode.rawValue)).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
-        if doc.info.video != nil {
-            HStack(spacing: 8) { Text(L.t("find.proto.whole")).font(.system(size: 12)); Spacer(minLength: 6); FlatSwitch(isOn: $find.protoWhole) }
+        let names = find.protagonists.filter { find.protoSel.contains($0.id) }.map(\.title)
+        VStack(spacing: 8) {
+            Rectangle().fill(Theme.line).frame(height: 0.5)
+            SectionTitle(L.t("people.keep")).frame(maxWidth: .infinity, alignment: .leading)
+            Segmented(options: find.availableModes.map { ($0, L.t("people.mode." + $0.rawValue)) }, selection: $find.protoMode)
+            HStack(alignment: .firstTextBaseline) {
+                Text(L.t("people.sum", nPieces)).font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 6)
+                Text(names.joined(separator: ", ")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+            }
+            HStack(spacing: 8) {
+                Button { find.addProtosToPieces() } label: { Text(L.t("people.add")).frame(maxWidth: .infinity) }
+                    .buttonStyle(FlatButton(height: 40)).opacity(nPieces == 0 ? 0.4 : 1).disabled(nPieces == 0)
+                Button { model.requestExport(ExportRequest(kind: .people(find), count: nFiles, run: { [weak find] in
+                    guard let find else { return }
+                    model.exportGroups(find.exportGroups(each: find.protoOut == .each))
+                })) } label: { Text(L.t("people.export")).frame(maxWidth: .infinity) }
+                    .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(nFiles == 0 ? 0.4 : 1).disabled(nFiles == 0)
+            }
         }
-        Divider().overlay(Theme.line).padding(.vertical, 2)
-        HStack(alignment: .firstTextBaseline) {
-            SectionTitle(L.t("find.proto.out"))
-            Spacer(minLength: 4)
-            Text(L.t("find.proto.pieces", nPieces, Fmt.time(total, decimals: false))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
-        }
-        Segmented(options: [(ProtoOut.each, L.t("find.proto.each")), (ProtoOut.merged, L.t("find.proto.merged"))], selection: $find.protoOut)
-        VStack(spacing: 6) {
-            Button { find.addProtosToPieces() } label: { Text(nPieces == 1 ? L.t("find.proto.add1") : L.t("find.proto.add", nPieces)).frame(maxWidth: .infinity) }
-                .buttonStyle(FlatButton(kind: .primary, height: 34)).opacity(nPieces == 0 ? 0.4 : 1).disabled(nPieces == 0)
-            Button { model.exportGroups(find.exportGroups(each: each)) } label: { Text(nFiles == 1 ? L.t("find.proto.export1") : L.t("find.proto.export", nFiles)).frame(maxWidth: .infinity) }
-                .buttonStyle(FlatButton(kind: .sand, height: 38)).opacity(nFiles == 0 ? 0.4 : 1).disabled(nFiles == 0)
-        }.padding(.top, 2)
     }
 }
 

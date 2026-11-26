@@ -182,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Menus
 
     @objc func openFiles() { AppModel.shared.chooseFiles() }
-    @objc func exportCmd() { AppModel.shared.exportNow() }
+    @objc func exportCmd() { AppModel.shared.requestPiecesExport() }
     @objc func closeFile() { if let d = AppModel.shared.current { AppModel.shared.close(d) } }
     @objc func undoCmd() { AppModel.shared.current?.undo() }
     @objc func shortcutsCmd() { AppModel.shared.showShortcuts.toggle() }
@@ -290,6 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   ChatMessage(role: .note, text: "Dossier refusé : l'agent n'écrit que dans le dossier du fichier source.", failed: true)]
                 }
             }
+            if self.arg("--state") == "options" { model.requestPiecesExport() }
             if self.arg("--state") == "export", let d = model.current { let r = ExportRun(); r.items = d.segments.map { ExportRun.Item(name: $0.id.uuidString.prefix(8) + ".mp4", duration: $0.duration, fraction: 0.5, state: .running) }; model.run = r; model.sheet = .export }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) {

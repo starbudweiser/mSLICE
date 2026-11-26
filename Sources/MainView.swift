@@ -84,6 +84,7 @@ struct MainView: View {
 
 struct TitleBar: View {
     @ObservedObject var model: AppModel
+    @AppStorage("rightTab") private var tab = 0
     var body: some View {
         HStack(spacing: 0) {
             Spacer().frame(width: 78)      // emplacement des trois boutons de fenêtre
@@ -98,6 +99,10 @@ struct TitleBar: View {
             }
             Spacer(minLength: 12)
             HStack(spacing: 8) {
+                if model.current != nil {
+                    Button { tab = tab == 1 ? 0 : 1 } label: { Image(systemName: "sparkles").font(.system(size: 13, weight: .medium)).foregroundStyle(tab == 1 ? Theme.onAccent : Theme.text).frame(width: 6) }
+                        .buttonStyle(FlatButton(kind: tab == 1 ? .primary : .normal)).help(L.t("agent.title"))
+                }
                 Button { model.showShortcuts.toggle() } label: { HStack(spacing: 8) { Text(L.t("bar.shortcuts")); Key("⌘/") } }.buttonStyle(FlatButton())
                 Button { AppDelegate.shared?.openSettings() } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .medium)).frame(width: 6) }.buttonStyle(FlatButton())
             }
@@ -240,10 +245,25 @@ struct TransportBar: View {
                 .foregroundStyle(Theme.onAccent).background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous)) }.buttonStyle(.plain)
             roundButton("forward.fill") { player.pause(); player.seek(player.time + 1) }
             roundButton("forward.end.fill") { player.pause(); player.seek(doc.segments.first(where: { $0.start > player.time + 0.05 })?.start ?? doc.duration) }
+            if doc.canClean { voiceButton }
             Spacer(minLength: 8)
             scalpelButton("I", L.t("tr.in")) { doc.markIn(at: player.time, snap: model.snap && model.opts.passthrough) }
             scalpelButton("O", L.t("tr.out")) { doc.markOut(at: player.time) }
         }.frame(height: 42)
+    }
+    /// Écoute la voix seule (musique et bruits retirés) : un bouton du lecteur, qui se remplit pendant le calcul de la piste.
+    private var voiceButton: some View {
+        let building: Double? = { if case .building(let p) = doc.clean { return p }; return nil }()
+        return Button { if building != nil { doc.cancelClean() } else { model.setVoiceOnly(!doc.voiceOnly, for: doc) } } label: {
+            ZStack {
+                if let p = building {
+                    Circle().stroke(Theme.text2.opacity(0.35), lineWidth: 2).frame(width: 16, height: 16)
+                    Circle().trim(from: 0, to: max(p, 0.04)).stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round)).rotationEffect(.degrees(-90)).frame(width: 16, height: 16)
+                } else { Image(systemName: "waveform").font(.system(size: 12, weight: .semibold)) }
+            }
+            .frame(width: 34, height: 34).foregroundStyle(doc.voiceOnly ? Theme.onAccent : Theme.text)
+            .background(doc.voiceOnly ? Theme.accent : Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+        }.buttonStyle(.plain).help(L.t("clean.help"))
     }
     private func roundButton(_ symbol: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).frame(width: 34, height: 34).foregroundStyle(Theme.text)
@@ -272,30 +292,20 @@ struct TimelineCard: View {
                 Text(L.t("tl.zoom")).font(.system(size: 11.5)).foregroundStyle(Theme.text2)
                 FlatSlider(value: zoomBinding).frame(width: 90)
                 Text(String(format: "%.0f×", max(doc.duration / max(doc.viewSpan, 0.1), 1))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).frame(minWidth: 26, alignment: .leading)
+                Spacer(minLength: 0)
                 Button { model.snap.toggle() } label: { Chip(text: L.t("tl.snap"), on: model.snap && model.opts.passthrough, enabled: model.opts.passthrough && doc.hasVideo) }.buttonStyle(.plain)
                     .help(L.t("tl.snap.help"))
-                if dialogues.hasLines { Button { dialogues.showLane.toggle() } label: { Chip(text: L.t("dlg.lane.chip"), on: dialogues.showLane) }.buttonStyle(.plain) }
-                Button { Task { await autoTrim() } } label: { Chip(text: L.t("tl.auto"), enabled: doc.info.audio != nil) }.buttonStyle(.plain)
-                if doc.canClean {
-                    Button { if case .building = doc.clean { doc.cancelClean() } else { model.setVoiceOnly(!doc.voiceOnly, for: doc) } } label: { Chip(text: cleanChipText, on: doc.voiceOnly) }
-                        .buttonStyle(.plain).help(L.t("clean.help"))
-                }
-                Spacer(minLength: 0)
+                Menu {
+                    Button(L.t("tl.auto")) { Task { await autoTrim() } }.disabled(doc.info.audio == nil)
+                    if dialogues.hasLines { Toggle(L.t("dlg.lane.chip"), isOn: $dialogues.showLane) }
+                } label: { Text("⋯").font(.system(size: 13, weight: .bold)).frame(width: 30, height: 24).background(Theme.ctl, in: Capsule()) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }.frame(height: 26).padding(.bottom, 4)
             TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.height(lane: !find.lane.isEmpty, dialogues: dialogues.laneVisible))
-            HStack(spacing: 10) {
-                legend("I", L.t("key.in")); legend("O", L.t("key.out")); legend("Espace", L.t("key.play")); legend("J K L", L.t("key.speed"))
-                legend("← →", L.t("key.frame")); legend("↑ ↓", L.t("key.keyframe")); legend("⌫", L.t("key.delete"))
-                Spacer(minLength: 0)
-            }.padding(.top, 8).overlay(alignment: .top) { Rectangle().fill(Theme.text2.opacity(0.18)).frame(height: 0.5) }.padding(.top, 8)
         }
         .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous).strokeBorder(Theme.line, lineWidth: 0.5))
-    }
-    private var cleanChipText: String {
-        if case .building(let p) = doc.clean { return L.t("clean.chip.building", Int((p * 100).rounded())) }
-        return L.t("clean.chip")
     }
     /// Un morceau entre le silence d'ouverture et le silence de fin.
     private func autoTrim() async {
@@ -322,10 +332,10 @@ struct TimelineCard: View {
 struct RightPanel: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
-    @AppStorage("rightTab") private var tab = 0          // 0 : morceaux et export, 1 : discussion avec l'agent, 2 : Trouver, 3 : Dialogues
+    @AppStorage("rightTab") private var tab = 0          // 0 : couper, 1 : agent (icône de la barre), 2 : personnes, 3 : dialogues
     var body: some View {
         VStack(spacing: 10) {
-            Segmented(options: [(0, L.t("agent.tab.edit")), (2, L.t("find.title")), (3, L.t("dlg.title")), (1, L.t("agent.title"))], selection: $tab)
+            Segmented(options: [(0, L.t("tab.cut")), (2, L.t("tab.people")), (3, L.t("dlg.title"))], selection: $tab)
             if tab == 3 {
                 DialoguePanel(model: model, doc: doc, dialogues: doc.dialogues)
             } else if tab == 1 {
@@ -333,25 +343,39 @@ struct RightPanel: View {
             } else if tab == 2 {
                 FindPanel(model: model, doc: doc, find: doc.find, openEdit: { tab = 0 })
             } else {
-                // Les cartes défilent si la fenêtre est basse ou les morceaux nombreux ; le bouton « Extraire » reste en bas.
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 10) {
-                        PiecesCard(model: model, doc: doc)
-                        ExportCard(model: model, doc: doc)
-                    }
-                }
-                Button { model.exportNow() } label: {
-                    Text(model.opts.merge ? L.t("export.go.merged") : L.t(doc.segments.count == 1 ? "export.go.one" : "export.go.n", doc.segments.count)).frame(maxWidth: .infinity)
-                }.buttonStyle(FlatButton(kind: .sand, height: 42)).opacity(doc.segments.isEmpty ? 0.4 : 1).disabled(doc.segments.isEmpty)
-                if doc.canClean {
-                    Button { model.exportWholeClean() } label: {
-                        if case .building(let p) = doc.clean { Text(L.t("clean.building", Int((p * 100).rounded()))).frame(maxWidth: .infinity) }
-                        else { Text(L.t("clean.exportWhole")).frame(maxWidth: .infinity) }
-                    }.buttonStyle(FlatButton(height: 34))
-                }
+                // Les morceaux défilent s'ils sont nombreux ; la barre d'export reste en bas.
+                ScrollView(.vertical, showsIndicators: false) { PiecesCard(model: model, doc: doc) }
+                ExportBar(model: model, doc: doc)
             }
         }
         .padding(.top, 14).padding(.bottom, 14).padding(.trailing, 14)
+    }
+}
+
+/// Barre d'export unique, en bas du panneau : le résumé de ce qui part, puis un seul bouton qui ouvre la feuille d'options.
+struct ExportBar: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var doc: Doc
+    var body: some View {
+        let o = model.opts
+        let n = doc.segments.isEmpty ? 0 : Planner.outputs(info: doc.info, segments: doc.segments, opts: o, keyframes: doc.keyframes, base: doc.baseName, mergeName: doc.mergeName).count
+        let est = Planner.estimate(info: doc.info, segments: doc.segments, opts: o)
+        VStack(spacing: 8) {
+            Rectangle().fill(Theme.line).frame(height: 0.5)
+            HStack(alignment: .firstTextBaseline) {
+                Text(n == 0 ? L.t("bar.nothing") : (n == 1 ? L.t("export.files.one") : L.t("export.files", n))).font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 6)
+                if n > 0 { Text("≈ " + Fmt.size(est.bytes)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2) }
+            }
+            Button { model.requestPiecesExport() } label: { Text(doc.segments.count == 1 ? L.t("exp.bar.one") : L.t("exp.bar.n", doc.segments.count)).frame(maxWidth: .infinity) }
+                .buttonStyle(FlatButton(kind: .sand, height: 42)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0)
+            if doc.canClean && doc.segments.isEmpty {
+                Button { model.exportWholeClean() } label: {
+                    if case .building(let p) = doc.clean { Text(L.t("clean.building", Int((p * 100).rounded()))).frame(maxWidth: .infinity) }
+                    else { Text(L.t("clean.exportWhole")).frame(maxWidth: .infinity) }
+                }.buttonStyle(FlatButton(height: 34))
+            }
+        }
     }
 }
 
@@ -416,63 +440,187 @@ struct PieceRow: View {
     }
 }
 
-struct ExportCard: View {
+struct ChoiceCard: View {
+    let on: Bool, title: String, sub: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack { Circle().strokeBorder(on ? Theme.accent : Theme.text2, lineWidth: on ? 5 : 1.5) }.frame(width: 16, height: 16).padding(.top, 1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.text)
+                    Text(sub).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(on ? Theme.accent : .clear, lineWidth: 1.5))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
+
+/// Un fichier par personne ou tout dans un seul : observe le choix pour se mettre à jour.
+struct PeopleFiles: View {
+    @ObservedObject var find: FindModel
+    let changed: () -> Void
+    var body: some View {
+        ChoiceCard(on: find.protoOut == .each, title: L.t("exp.files.people.each"), sub: L.t("exp.files.people.each.sub")) { find.protoOut = .each; changed() }
+        ChoiceCard(on: find.protoOut == .merged, title: L.t("exp.files.merged"), sub: L.t("exp.files.people.merged.sub")) { find.protoOut = .merged; changed() }
+    }
+}
+
+/// Feuille d'options d'export : trois questions (combien de fichiers, quel format, quel son), le dossier, puis un pli « Plus d'options » (noms, codec, qualité).
+/// Même feuille pour les morceaux de la timeline et pour les personnes choisies dans l'onglet Personnes.
+struct ExportOptionsSheet: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
+    let request: ExportRequest
+    @State private var more = false
+
+    private var people: FindModel? { if case .people(let f) = request.kind { return f }; return nil }
+    private var eff: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
+    private var waitingClean: Bool { model.opts.voiceOnly && doc.canClean && doc.clean != .ready }
+
     var body: some View {
-        let info = doc.info
-        let est = Planner.estimate(info: info, segments: doc.segments, opts: eff)
-        Card {
-            Segmented(options: [(false, L.t("export.separate")), (true, L.t("export.merge"))], selection: $model.opts.merge)
-            names
-            Segmented(options: [(true, L.t("export.passthrough")), (false, L.t("export.recompress"))], selection: passthroughBinding)
-            FlowLayout(spacing: 5) {
-                if model.opts.passthrough { fmtChip(.same) }
-                ForEach(OutFormat.video + OutFormat.audio, id: \.self) { fmtChip($0) }
+        SheetBox(width: 460) {
+            Text(title).font(.system(size: 16, weight: .bold))
+            question(L.t("exp.q.files")) { filesChoice }
+            question(L.t("exp.q.format")) { formatMenu; Text(L.t(model.opts.passthrough ? "exp.format.copy.note" : "exp.format.re.note")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading) }
+            if doc.canClean { question(L.t("exp.q.sound")) { soundChoice } }
+            question(L.t("exp.q.folder")) { folderRow }
+            Button { withAnimation(.easeOut(duration: 0.15)) { more.toggle() } } label: {
+                HStack { Text(L.t("exp.more")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer(); Image(systemName: more ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.text2) }
+                    .frame(height: 24).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if more { moreOptions }
+            HStack(spacing: 8) {
+                Spacer()
+                Button { model.cancelOptions() } label: { HStack(spacing: 8) { Text(L.t("common.cancel")); Key("Esc") } }.buttonStyle(FlatButton(height: 36))
+                Button { model.confirmExport() } label: { Text(waitingClean ? L.t("clean.building", Int(cleanPercent)) : goLabel).frame(minWidth: 150) }
+                    .buttonStyle(FlatButton(kind: .sand, height: 36)).opacity(waitingClean || request.count == 0 ? 0.5 : 1).disabled(waitingClean || request.count == 0)
             }
-            if doc.canClean { voiceRow }
-            if !model.opts.passthrough, !eff.resolvedFormat(for: info).isAudio, !info.isAudioOnly {
+        }
+    }
+
+    private var title: String {
+        if let f = people { return L.t(f.protoOut == .each && request.count > 1 ? "exp.title.people" : "exp.title.people1", request.count) }
+        return L.t(doc.segments.count == 1 ? "exp.title.one" : "exp.title.n", doc.segments.count)
+    }
+    private var goLabel: String { request.count == 1 ? L.t("exp.confirm.one") : L.t("exp.confirm.n", request.count) }
+    private var cleanPercent: Double { if case .building(let p) = doc.clean { return (p * 100).rounded() }; return 0 }
+
+    private func question<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 6) { SectionTitle(label); content() }
+    }
+
+    // 1. Combien de fichiers
+    @ViewBuilder private var filesChoice: some View {
+        if let f = people {
+            PeopleFiles(find: f, changed: refresh)
+        } else {
+            choice(on: !model.opts.merge, title: L.t("exp.files.each"), sub: namesPreview(merge: false)) { model.opts.merge = false; refresh() }
+            choice(on: model.opts.merge, title: L.t("exp.files.merged"), sub: namesPreview(merge: true)) { model.opts.merge = true; refresh() }
+        }
+    }
+    /// Le nombre de fichiers annoncé suit le choix : on relance le calcul depuis la demande d'origine.
+    private func refresh() {
+        guard let f = people else { model.request?.count = Planner.outputs(info: doc.info, segments: doc.segments, opts: model.opts, keyframes: doc.keyframes, base: doc.baseName, mergeName: doc.mergeName).count; return }
+        let each = f.protoOut == .each
+        model.request?.count = each ? f.exportGroups(each: true).filter { !$0.segments.isEmpty }.count : (f.protoUnion.isEmpty ? 0 : 1)
+    }
+    private func namesPreview(merge: Bool) -> String {
+        var o = eff; o.merge = merge
+        let outs = Planner.outputs(info: doc.info, segments: doc.segments, opts: o, keyframes: doc.keyframes, base: doc.baseName, mergeName: doc.mergeName)
+        let names = outs.map { $0.url.deletingPathExtension().lastPathComponent }
+        guard names.count > 1, let first = names.first else { return names.first ?? "" }
+        // noms numérotés : on n'affiche que la partie qui change (« …_01, …_02, …_03 »)
+        var common = first.count
+        for n in names { common = min(common, zip(first, n).prefix { $0 == $1 }.count) }
+        let tails = names.map { "…" + String($0.dropFirst(max(common - 1, 0))) }
+        return tails.count > 3 ? tails.prefix(2).joined(separator: ", ") + ", … " + (tails.last ?? "") : tails.joined(separator: ", ")
+    }
+    private func choice(on: Bool, title: String, sub: String, _ action: @escaping () -> Void) -> some View { ChoiceCard(on: on, title: title, sub: sub, action: action) }
+
+    // 2. Format
+    private var formatMenu: some View {
+        let info = doc.info
+        let copyable = (OutFormat.video + OutFormat.audio).filter { f in (!info.isAudioOnly || f.isAudio) && Planner.canCopy(info: info, to: f) }
+        let all = (OutFormat.video + OutFormat.audio).filter { f in !info.isAudioOnly || f.isAudio }
+        return Menu {
+            Section(L.t("exp.format.copy")) {
+                Button(L.t("exp.format.same")) { setFormat(.same, copy: true) }
+                ForEach(copyable.filter { $0 != .same }, id: \.self) { f in Button(f.title) { setFormat(f, copy: true) } }
+            }
+            Section(L.t("exp.format.re")) { ForEach(all, id: \.self) { f in Button(f.title) { setFormat(f, copy: false) } } }
+        } label: {
+            Text(formatTitle).font(.system(size: 12.5, weight: .semibold)).lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden)
+        .padding(.horizontal, 12).frame(height: 34).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+        .overlay(alignment: .trailing) { Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.text2).padding(.trailing, 12).allowsHitTesting(false) }
+    }
+    private var formatTitle: String {
+        let f = eff.resolvedFormat(for: doc.info)
+        if model.opts.passthrough { return model.opts.format == .same ? L.t("exp.format.same") : L.t("exp.format.copyto", f.title) }
+        return L.t("exp.format.reto", f.title)
+    }
+    private func setFormat(_ f: OutFormat, copy: Bool) {
+        model.opts.passthrough = copy
+        model.opts.format = (!copy && f == .same) ? (doc.info.isAudioOnly ? .m4a : .mp4) : f
+    }
+
+    // 3. Son
+    private var soundChoice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Segmented(options: [(false, L.t("exp.sound.original")), (true, L.t("clean.export"))], selection: voiceBinding)
+            switch doc.clean {
+            case .building(let p) where model.opts.voiceOnly: Text(L.t("clean.building", Int((p * 100).rounded()))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2)
+            case .ready where model.opts.voiceOnly: Text(L.t("exp.sound.ready")).font(.system(size: 11.5)).foregroundStyle(Theme.text2)
+            default: if model.opts.voiceOnly { Text(L.t("exp.sound.note")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
+            }
+        }
+    }
+    private var voiceBinding: Binding<Bool> {
+        Binding(get: { model.opts.voiceOnly }, set: { v in model.opts.voiceOnly = v; if v, doc.clean == .none || doc.clean == .failed { doc.buildClean() } })
+    }
+
+    // Dossier
+    private var folderRow: some View {
+        HStack(spacing: 8) {
+            Text(model.opts.folder.map { ($0 as NSString).lastPathComponent } ?? L.t("export.sameFolder")).font(.system(size: 12.5, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 6)
+            Button { chooseFolder() } label: { Text(L.t("exp.choose")) }.buttonStyle(FlatButton(height: 26))
+        }
+        .padding(.horizontal, 12).frame(height: 34).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+    }
+
+    // Plus d'options
+    @ViewBuilder private var moreOptions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if people == nil { names }
+            if !model.opts.passthrough, !eff.resolvedFormat(for: doc.info).isAudio, !doc.info.isAudioOnly {
                 row(L.t("export.codec")) {
                     Menu {
-                        ForEach(VideoCodec.allCases.filter { c in Planner.codecFor(eff.resolvedFormat(for: info), c) == c }, id: \.self) { c in Button(c.title) { model.opts.codec = c } }
+                        ForEach(VideoCodec.allCases.filter { c in Planner.codecFor(eff.resolvedFormat(for: doc.info), c) == c }, id: \.self) { c in Button(c.title) { model.opts.codec = c } }
                         Divider()
                         ForEach(Quality.allCases, id: \.self) { q in Button(q.title) { model.opts.quality = q } }
-                    } label: { Text("\(Planner.codecFor(eff.resolvedFormat(for: info), model.opts.codec).title) · \(model.opts.quality.title) ▾").font(.system(size: 12, weight: .semibold)) }
+                    } label: { Text("\(Planner.codecFor(eff.resolvedFormat(for: doc.info), model.opts.codec).title) · \(model.opts.quality.title) ▾").font(.system(size: 12, weight: .semibold)) }
                     .menuStyle(.borderlessButton).fixedSize()
                 }
             }
-            row(L.t("export.folder")) {
-                Button { chooseFolder() } label: { Text((model.opts.folder.map { ($0 as NSString).lastPathComponent } ?? L.t("export.sameFolder")) + " ▾").font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle) }.buttonStyle(.plain)
+            if people == nil && !doc.segments.isEmpty {
+                let est = Planner.estimate(info: doc.info, segments: doc.segments, opts: eff)
+                HStack(alignment: .firstTextBaseline) { Text(L.t("export.estSize")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer()
+                    Text("≈ \(Fmt.size(est.bytes))").font(.system(size: 12, weight: .semibold).monospacedDigit()) }
+                HStack(alignment: .firstTextBaseline) { Text(L.t("export.estTime")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer()
+                    Text("≈ " + (est.seconds < 60 ? "\(Int(est.seconds.rounded(.up))) s" : Fmt.time(est.seconds, decimals: false))).font(.system(size: 12, weight: .semibold).monospacedDigit()) }
             }
-            HStack(alignment: .firstTextBaseline) { Text(L.t("export.estSize")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer()
-                Text(doc.segments.isEmpty ? "—" : "≈ \(Fmt.size(est.bytes)) · −\(Fmt.size(max(info.size - est.bytes, 0)))").font(.system(size: 12, weight: .semibold).monospacedDigit()) }
-            HStack(alignment: .firstTextBaseline) { Text(L.t("export.estTime")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer()
-                Text(doc.segments.isEmpty ? "—" : "≈ " + (est.seconds < 60 ? "\(Int(est.seconds.rounded(.up))) s" : Fmt.time(est.seconds, decimals: false))).font(.system(size: 12, weight: .semibold).monospacedDigit()) }
         }
     }
-    private var eff: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
-    /// « Voix seules » : l'audio exporté est la piste sans musique ni bruits (calculée à la demande, gardée ensuite).
-    private var voiceRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Button { model.opts.voiceOnly.toggle(); if model.opts.voiceOnly, doc.clean == .none || doc.clean == .failed { doc.buildClean() } } label: { Chip(text: L.t("clean.export"), on: model.opts.voiceOnly) }.buttonStyle(.plain)
-                Spacer(minLength: 0)
-                switch doc.clean {
-                case .building(let p): Text(L.t("clean.building", Int((p * 100).rounded()))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2)
-                case .ready: Text(L.t("clean.ready")).font(.system(size: 11.5)).foregroundStyle(Theme.text2)
-                default: EmptyView()
-                }
-            }
-            if model.opts.voiceOnly { Text(L.t("clean.exportNote")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
-        }
-    }
-    private var passthroughBinding: Binding<Bool> {
-        Binding(get: { model.opts.passthrough }, set: { v in
-            model.opts.passthrough = v
-            if v { if !Planner.canCopy(info: doc.info, to: model.opts.format) { model.opts.format = .same } }
-            else if model.opts.format == .same { model.opts.format = doc.info.isAudioOnly ? .m4a : .mp4 }
-        })
-    }
+
     /// Noms des fichiers produits, modifiables : un nom de base commun, puis un nom propre à chaque morceau (ou celui du fichier fusionné).
     private var names: some View {
         let outs = Planner.outputs(info: doc.info, segments: doc.segments, opts: eff, keyframes: doc.keyframes, base: doc.baseName, mergeName: doc.mergeName)
@@ -482,7 +630,6 @@ struct ExportCard: View {
             if !outs.isEmpty {
                 if model.opts.merge {
                     nameField(placeholder: outs[0].url.deletingPathExtension().lastPathComponent, text: $doc.mergeName, ext: ext)
-                    Text(L.t("export.mergeNote", doc.segments.count)).font(.system(size: 11)).foregroundStyle(Theme.text2)
                 } else {
                     HStack { Text(L.t("export.baseName")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer(minLength: 6) }
                     nameField(placeholder: original, text: $doc.baseName, ext: nil)
@@ -511,17 +658,6 @@ struct ExportCard: View {
         .padding(.horizontal, 9).frame(height: 26).frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
     }
-    private func fmtChip(_ f: OutFormat) -> some View {
-        let info = doc.info
-        var ok = true
-        if info.isAudioOnly && !f.isAudio && f != .same { ok = false }
-        if model.opts.passthrough, !model.opts.voiceOnly, ok { ok = Planner.canCopy(info: info, to: f) }
-        let on = model.opts.format == f || (!model.opts.passthrough && model.opts.format == .same && f == (info.isAudioOnly ? .m4a : .mp4))
-        return Button { if ok { model.opts.format = f } } label: {
-            Text(f.title).font(.system(size: 11.5, weight: on ? .semibold : .regular)).lineLimit(1).padding(.horizontal, 9).frame(height: 24)
-                .foregroundStyle(on ? Theme.onAccent : Theme.text).background(on ? Theme.accent : Theme.ctl, in: Capsule()).opacity(ok ? 1 : 0.4)
-        }.buttonStyle(.plain)
-    }
     private func row<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
         HStack { Text(label).font(.system(size: 12)).foregroundStyle(Theme.text2); Spacer(minLength: 6); content() }
             .padding(.horizontal, 10).frame(height: 30).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
@@ -538,8 +674,10 @@ struct SheetLayer: View {
     @ObservedObject var model: AppModel
     var body: some View {
         ZStack {
-            Color.black.opacity(0.36).ignoresSafeArea()
-            if let run = model.run {
+            Color.black.opacity(0.36).ignoresSafeArea().onTapGesture { if model.sheet == .options { model.cancelOptions() } }
+            if model.sheet == .options, let d = model.current, let r = model.request {
+                ExportOptionsSheet(model: model, doc: d, request: r)
+            } else if let run = model.run {
                 if model.sheet == .export { ExportProgressSheet(model: model, run: run) } else { DoneSheet(model: model, run: run) }
             }
         }

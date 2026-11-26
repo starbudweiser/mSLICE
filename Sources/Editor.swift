@@ -171,7 +171,15 @@ final class Doc: ObservableObject, Identifiable {
     }
 }
 
-enum Sheet: Equatable { case none, export, done }
+enum Sheet: Equatable { case none, export, done, options }
+
+/// Ce qu'on s'apprête à exporter : la feuille d'options est la même pour les morceaux et pour les personnes choisies ; `run` lance l'export une fois validée.
+struct ExportRequest {
+    enum Kind { case pieces, people(FindModel) }
+    var kind: Kind
+    var count: Int                      // nombre de fichiers annoncé
+    var run: @MainActor () -> Void
+}
 
 /// Piste « voix seules » d'un fichier (voir `CleanVoice`) : absente, en calcul (0…1), prête ou en échec.
 enum CleanState: Equatable { case none, building(Double), ready, failed }
@@ -186,6 +194,7 @@ final class AppModel: ObservableObject {
     @Published var docs: [Doc] = []
     @Published var current: Doc?
     @Published var sheet: Sheet = .none
+    @Published var request: ExportRequest?
     @Published var run: ExportRun?
     @Published var toast: String?
     @Published var loading = 0
@@ -325,6 +334,23 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Ouvre la feuille d'options d'export (ni lancement ni écrasement : tout part du bouton « Exporter » de la feuille).
+    func requestExport(_ r: ExportRequest) {
+        guard sheet == .none, current != nil else { return }
+        request = r; sheet = .options
+    }
+    /// Les morceaux de la timeline.
+    func requestPiecesExport() {
+        guard let d = current, !d.segments.isEmpty else { return }
+        requestExport(ExportRequest(kind: .pieces, count: Planner.outputs(info: d.info, segments: d.segments, opts: opts, keyframes: d.keyframes, base: d.baseName, mergeName: d.mergeName).count, run: { [weak self] in self?.exportNow() }))
+    }
+    func cancelOptions() { if sheet == .options { sheet = .none; request = nil } }
+    func confirmExport() {
+        guard sheet == .options, let r = request else { return }
+        sheet = .none; request = nil
+        r.run()
+    }
+
     func cancelExport() { run?.cancel.cancel() }
     func closeSheet() { sheet = .none; run = nil }
     func trashOriginal() { if let u = current?.url { NSWorkspace.shared.recycle([u]) { _, _ in }; current.map { close($0) } ; closeSheet() } }
@@ -335,7 +361,7 @@ final class AppModel: ObservableObject {
     func handleKey(_ e: NSEvent) -> Bool {
         if !testMode { guard let win = NSApp.keyWindow, win === mainWindow, !(win.firstResponder is NSText) else { return false } }
         if sheet != .none {
-            if e.keyCode == 53 { if sheet == .export { cancelExport() } else { closeSheet() }; return true }
+            if e.keyCode == 53 { if sheet == .export { cancelExport() } else if sheet == .options { cancelOptions() } else { closeSheet() }; return true }
             return false
         }
         guard let d = current else { return false }
