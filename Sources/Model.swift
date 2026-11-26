@@ -46,6 +46,7 @@ struct ExportOptions: Codable, Equatable {
     var digits = 2                        // numérotation : _01, _02…
     var voiceOnly = false                 // « voix seules » : l'audio exporté est la piste nettoyée (`CleanVoice`) ; jamais mémorisé d'un lancement à l'autre
 
+    var trimIntensity = 0.5               // intensité de « blancs retirés » (0 doux … 1 serré) ; mémorisée à part (clé trim.intensity)
     var trimSilence = false               // « blancs retirés » : silences resserrés autour des morceaux (et à l'intérieur dans un fichier fusionné) ; jamais mémorisé
 
     private enum CodingKeys: String, CodingKey { case merge, passthrough, format, codec, quality, folder, suffix, digits }

@@ -60,16 +60,22 @@ if let i = CommandLine.arguments.firstIndex(of: "--dfn-run"), CommandLine.argume
     print(ok ? "OK : \(String(format: "%.2f", Date().timeIntervalSince(t0))) s" : "ÉCHEC"); exit(ok ? 0 : 1)
 }
 
-// `mSLICE --silence-info <fichier>` : silences trouvés (réglages de « blancs retirés ») et durée gagnée en fusionnant le fichier entier.
+// `mSLICE --silence-info <fichier> [intensité 0…1]` : niveau sonore, seuil relatif, silences trouvés et durée gagnée en fusionnant le fichier entier.
 if let i = CommandLine.arguments.firstIndex(of: "--silence-info"), CommandLine.arguments.indices.contains(i + 1) {
     let url = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    let intensity = CommandLine.arguments.indices.contains(i + 2) ? Double(CommandLine.arguments[i + 2]) ?? 0.5 : 0.5
     Task { @MainActor in
         guard let info = Probe.read(url) else { print("sonde impossible"); exit(1) }
-        let r = await Silence.ranges(info, noiseDB: Silence.trimNoiseDB, minDuration: Silence.trimMinDuration)
-        let whole = [Segment(start: 0, end: info.duration)]
-        let t = Silence.tighten(whole, silences: r, inside: true)
-        print("durée \(String(format: "%.2f", info.duration)) s, \(r.count) silences (\(String(format: "%.2f", r.reduce(0) { $0 + $1.end - $1.start })) s), \(t.count) prises, \(String(format: "%.2f", t.reduce(0) { $0 + $1.duration })) s gardées")
-        for z in r.prefix(12) { print(String(format: "  silence %.2f → %.2f (%.2f s)", z.start, z.end, z.end - z.start)) }
+        let t0 = Date()
+        guard let lp = await LoudnessProfile.measure(info) else { print("aucun son"); exit(1) }
+        let mesure = Date().timeIntervalSince(t0)
+        for step in [0.0, 0.25, 0.5, 0.75, 1.0] where CommandLine.arguments.count <= i + 2 || step == intensity {
+            let r = lp.silences(intensity: step), keep = LoudnessProfile.params(step).keep
+            let t = Silence.tighten([Segment(start: 0, end: info.duration)], silences: r, keep: keep, inside: true)
+            print(String(format: "intensité %.2f : seuil %.1f dB (bruit de fond %.1f, crêtes %.1f), %d silences (%.2f s), %d prises, %.2f s gardées sur %.2f s", step, lp.threshold(step), lp.floorDB, lp.peakDB, r.count, r.reduce(0) { $0 + $1.end - $1.start }, t.count, t.reduce(0) { $0 + $1.duration }, info.duration))
+        }
+        if CommandLine.arguments.count > i + 3 { for z in lp.silences(intensity: intensity) { print(String(format: "  silence %.2f → %.2f (%.2f s)", z.start, z.end, z.end - z.start)) } }
+        print(String(format: "mesure du niveau : %.2f s", mesure))
         exit(0)
     }
     dispatchMain()

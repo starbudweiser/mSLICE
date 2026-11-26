@@ -420,7 +420,7 @@ final class FindModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.doc.ensureSilences()
-                items = Silence.tighten(items, silences: self.doc.silences ?? [], inside: true)
+                items = self.doc.tighten(items, inside: true)
                 self.commitPieces(items)
             }
         } else { commitPieces(items) }

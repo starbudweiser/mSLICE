@@ -15,8 +15,22 @@ final class Doc: ObservableObject, Identifiable {
     @Published var baseName = "" { didSet { scheduleSave() } }        // nom de base des fichiers exportés ; vide : nom de l'original
     @Published var mergeName = "" { didSet { scheduleSave() } }       // nom du fichier fusionné ; vide : automatique
     @Published var exported = false
-    @Published var silences: [(start: Double, end: Double)]?      // silences du fichier (réglages de `Silence.trim…`), calculés à la demande pour « blancs retirés »
+    @Published var loudness: LoudnessProfile?                     // niveau sonore du fichier, mesuré à la demande pour « blancs retirés » (une seule fois)
     @Published var silenceBusy = false
+    private var silenceCache: (intensity: Double, ranges: [(start: Double, end: Double)])?
+    /// Silences pour l'intensité choisie (nil tant que le niveau sonore n'est pas mesuré) : recalculés à la volée quand le curseur bouge.
+    var silences: [(start: Double, end: Double)]? {
+        guard let l = loudness else { return nil }
+        let i = AppModel.shared.opts.trimIntensity
+        if let c = silenceCache, c.intensity == i { return c.ranges }
+        let r = l.silences(intensity: i); silenceCache = (i, r); return r
+    }
+    /// Respiration gardée de chaque côté d'une coupe, selon l'intensité.
+    var silenceKeep: Double { LoudnessProfile.params(AppModel.shared.opts.trimIntensity).keep }
+    func tighten(_ segs: [Segment], inside: Bool) -> [Segment] {
+        guard let s = silences else { return segs }
+        return Silence.tighten(segs, silences: s, keep: silenceKeep, inside: inside)
+    }
     @Published var viewStart = 0.0
     @Published var viewSpan: Double
     @Published var clean: CleanState = .none
@@ -139,15 +153,15 @@ final class Doc: ObservableObject, Identifiable {
 
     /// Calcule les silences une fois (une seule recherche à la fois).
     func ensureSilences() async {
-        if silences != nil || silenceBusy || info.audio == nil { return }
+        if loudness != nil || silenceBusy || info.audio == nil { return }
         silenceBusy = true
-        let r = await Silence.ranges(info, noiseDB: Silence.trimNoiseDB, minDuration: Silence.trimMinDuration)
-        silences = r; silenceBusy = false
+        let l = await LoudnessProfile.measure(info)
+        loudness = l ?? LoudnessProfile(frameDB: [], duration: info.duration); silenceBusy = false
     }
     /// Morceaux à exporter : ceux de la timeline, resserrés sur la parole si « blancs retirés » est choisi et les silences connus.
     func exportSegments(_ o: ExportOptions) -> [Segment] {
         guard o.trimSilence, let sil = silences else { return segments }
-        return Silence.tighten(segments, silences: sil, inside: o.merge)
+        _ = sil; return tighten(segments, inside: o.merge)
     }
 
     /// Retire les blancs des morceaux posés (début, fin et intérieur), annulable avec ⌘Z. Renvoie la durée gagnée ; nil s'il n'y a rien à faire (pas de son, pas de morceau).
@@ -156,7 +170,8 @@ final class Doc: ObservableObject, Identifiable {
         await ensureSilences()
         guard let sil = silences else { return nil }
         let before = segments.reduce(0) { $0 + $1.duration }
-        let t = Silence.tighten(segments, silences: sil, inside: true)
+        _ = sil
+        let t = tighten(segments, inside: true)
         let gain = before - t.reduce(0) { $0 + $1.duration }
         guard !t.isEmpty, gain > 0.05 else { return 0 }
         snapshot(); segments = t; selected = t.first?.id
@@ -233,7 +248,7 @@ final class AppModel: ObservableObject {
     @Published var run: ExportRun?
     @Published var toast: String?
     @Published var loading = 0
-    @Published var opts: ExportOptions { didSet { if let d = try? JSONEncoder().encode(opts) { UserDefaults.standard.set(d, forKey: "export.opts") } } }
+    @Published var opts: ExportOptions { didSet { if let d = try? JSONEncoder().encode(opts) { UserDefaults.standard.set(d, forKey: "export.opts") }; UserDefaults.standard.set(opts.trimIntensity, forKey: "trim.intensity") } }
     @Published var snap = true
     @Published var showShortcuts = false
     let player = PlayerModel()
@@ -243,6 +258,7 @@ final class AppModel: ObservableObject {
 
     init() {
         if let d = UserDefaults.standard.data(forKey: "export.opts"), let o = try? JSONDecoder().decode(ExportOptions.self, from: d) { opts = o } else { opts = ExportOptions() }
+        if UserDefaults.standard.object(forKey: "trim.intensity") != nil { opts.trimIntensity = min(max(UserDefaults.standard.double(forKey: "trim.intensity"), 0), 1) }
         // L'analyse cède le processeur à la lecture et à l'export, puis reprend toute seule.
         gateSink = Publishers.CombineLatest(player.$isPlaying, $sheet).sink { playing, sheet in AnalysisGate.shared.paused = playing || sheet == .export }
     }
@@ -340,7 +356,7 @@ final class AppModel: ObservableObject {
         var groups = groups
         if o.trimSilence, d.info.audio != nil {                                          // « blancs retirés » : chaque groupe resserré sur la parole
             guard let sil = d.silences else { flash(L.t("exp.silence.busy")); Task { await d.ensureSilences(); self.exportGroups(groups, voice: voice, names: names) }; return }
-            groups = groups.map { g in (g.name, Silence.tighten(g.segments.map { Segment(start: $0.start, end: $0.end) }, silences: sil, inside: true).map { (start: $0.start, end: $0.end) }) }
+            _ = sil; groups = groups.map { g in (g.name, d.tighten(g.segments.map { Segment(start: $0.start, end: $0.end) }, inside: true).map { (start: $0.start, end: $0.end) }) }
             if !d.info.isAudioOnly { o.passthrough = false }
         }
         o.merge = true

@@ -92,6 +92,11 @@ enum Probe {
 
 /// Mises en forme partagées (durées, tailles) : une décimale, virgule en français.
 enum Fmt {
+    /// Respiration totale gardée entre deux prises pour une intensité, en secondes, avec la virgule de la langue (« 0,2 »).
+    static func breath(_ intensity: Double) -> String {
+        let t = String(format: "%.2f", LoudnessProfile.params(intensity).keep * 2)
+        return L.lang == .en ? t : t.replacingOccurrences(of: ".", with: ",")
+    }
     /// 3:42.1 ou 1:03:55.2
     static func time(_ t: Double, decimals: Bool = true) -> String {
         let t = max(0, t)

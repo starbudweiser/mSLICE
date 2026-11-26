@@ -754,17 +754,20 @@ extension PeopleBar {
         var gain: Double?
         if on, let sil = doc.silences {
             let segs = union.map { Segment(start: $0.start, end: $0.end) }
-            gain = segs.reduce(0) { $0 + $1.duration } - Silence.tighten(segs, silences: sil, inside: true).reduce(0) { $0 + $1.duration }
+            _ = sil; gain = segs.reduce(0) { $0 + $1.duration } - doc.tighten(segs, inside: true).reduce(0) { $0 + $1.duration }
         }
-        return HStack(spacing: 8) {
-            Button { model.opts.trimSilence.toggle(); if model.opts.trimSilence { Task { await doc.ensureSilences() } } } label: { Chip(text: L.t("sil.trim"), on: on) }.buttonStyle(.plain)
-            if on {
-                Text(gain.map { L.t("sil.gain", Fmt.time(max($0, 0), decimals: true)) } ?? L.t("exp.silence.busy"))
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
-            } else {
-                Text(L.t("sil.hint")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button { model.opts.trimSilence.toggle(); if model.opts.trimSilence { Task { await doc.ensureSilences() } } } label: { Chip(text: L.t("sil.trim"), on: on) }.buttonStyle(.plain)
+                if on {
+                    Text(gain.map { L.t("sil.gain", Fmt.time(max($0, 0), decimals: true), Fmt.breath(model.opts.trimIntensity)) } ?? L.t("exp.silence.busy"))
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+                } else {
+                    Text(L.t("sil.hint")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            if on { IntensitySlider(model: model) }
         }
     }
 }

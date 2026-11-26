@@ -33,8 +33,8 @@ enum Silence {
         return (a, b)
     }
 
-    /// Réglages des « blancs retirés » : un silence est ce qui reste sous −35 dB pendant 0,35 s ; on en garde 0,1 s de chaque côté d'une coupe (0,2 s de respiration entre deux prises).
-    static let trimNoiseDB = -35.0, trimMinDuration = 0.35, trimKeep = 0.1
+    /// Respiration gardée de chaque côté d'une coupe par défaut (réglage moyen de l'intensité).
+    static let trimKeep = 0.1
 
     /// Resserre les morceaux sur la parole. Début et fin : le silence d'ouverture ou de fermeture est réduit à `keep`. Si `inside`, un silence au milieu d'un morceau est coupé
     /// (il en reste `keep` de chaque côté) : le morceau devient plusieurs prises, utile quand tout est assemblé dans un seul fichier. Un morceau entièrement muet disparaît.
@@ -58,5 +58,79 @@ enum Silence {
             if b - cur > 0.05 { var n = Segment(start: cur, end: b, who: seg.who); if first { n.name = seg.name; n.id = seg.id }; out.append(n) }
         }
         return out
+    }
+}
+
+/// Niveau sonore du fichier (un point de 25 ms, en dB), calculé une fois ; les silences s'en déduisent instantanément pour toute intensité (le curseur reste fluide).
+/// Le seuil est RELATIF au bruit de fond de la vidéo (niveau bas du fichier + une marge), pas un nombre fixe : une salle bruyante ou un rire de public ne cachent plus les pauses.
+struct LoudnessProfile: Sendable {
+    static let hop = 0.025
+    let frameDB: [Float]
+    let duration: Double
+    let floorDB: Float, peakDB: Float
+
+    init(frameDB: [Float], duration: Double) {
+        self.frameDB = frameDB; self.duration = duration
+        let live = frameDB.filter { $0 > -85 }.sorted()                       // les silences numériques purs ne disent rien du bruit de fond
+        func q(_ p: Double) -> Float { live.isEmpty ? -90 : live[min(Int(Double(live.count - 1) * p), live.count - 1)] }
+        floorDB = q(0.15); peakDB = q(0.95)
+    }
+
+    /// Intensité 0…1 → marge au-dessus du bruit de fond, durée minimale d'un silence, respiration gardée de chaque côté.
+    /// Doux : 5 dB, 0,6 s, 0,15 s. Serré : 15 dB, 0,2 s, 0,05 s. Moyen (0,5) : 10 dB, 0,4 s, 0,10 s.
+    static func params(_ intensity: Double) -> (marginDB: Double, minDuration: Double, keep: Double) {
+        let i = min(max(intensity, 0), 1)
+        return (5 + 10 * i, 0.6 - 0.4 * i, 0.15 - 0.10 * i)
+    }
+
+    /// Seuil de silence : bruit de fond + marge, sans jamais monter à moins de 18 dB (Doux) à 12 dB (Serré) sous les crêtes : la parole n'est pas coupée.
+    func threshold(_ intensity: Double) -> Float { min(floorDB + Float(Self.params(intensity).marginDB), peakDB - Float(18 - 6 * min(max(intensity, 0), 1))) }
+
+    func silences(intensity: Double) -> [(start: Double, end: Double)] {
+        let p = Self.params(intensity), thr = threshold(intensity)
+        let minFrames = Int((p.minDuration / Self.hop).rounded(.up))
+        var out: [(start: Double, end: Double)] = []
+        var runStart: Int?, lastQuiet = 0, loud = 0
+        func close(_ end: Int) {
+            if let a = runStart, end - a >= minFrames { out.append((Double(a) * Self.hop, min(Double(end) * Self.hop, duration))) }
+            runStart = nil
+        }
+        for (i, v) in frameDB.enumerated() {
+            if v < thr { if runStart == nil { runStart = i }; lastQuiet = i + 1; loud = 0 }
+            else if runStart != nil { loud += 1; if loud >= 3 { close(lastQuiet); loud = 0 } }          // 3 images fortes de suite (75 ms) ferment un silence ; un clic isolé ne le coupe pas
+        }
+        close(runStart != nil && loud < 3 ? lastQuiet : frameDB.count)
+        return out
+    }
+
+    /// Décode la première piste audio en mono 8 kHz et mesure le niveau toutes les 25 ms (ffmpeg, en flux : pas de fichier temporaire).
+    static func measure(_ info: MediaInfo) async -> LoudnessProfile? {
+        guard let ffmpeg = Tools.ffmpeg, info.audio != nil else { return nil }
+        return await Task.detached(priority: .utility) { () -> LoudnessProfile? in
+            let p = Process(); p.executableURL = ffmpeg
+            p.arguments = ["-nostdin", "-hide_banner", "-loglevel", "error", "-i", info.url.path, "-vn", "-map", "0:a:0", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"]
+            let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
+            do { try p.run() } catch { return nil }
+            let win = 200                                                     // 25 ms à 8 kHz
+            var frames: [Float] = [], acc: Double = 0, n = 0, carry = Data()
+            let h = out.fileHandleForReading
+            while true {
+                let chunk = h.readData(ofLength: 1 << 16)
+                if chunk.isEmpty { break }
+                carry.append(chunk)
+                let usable = carry.count / 4 * 4
+                carry.withUnsafeBytes { raw in
+                    let f = raw.bindMemory(to: Float.self)
+                    for i in 0 ..< usable / 4 {
+                        let v = Double(f[i]); acc += v * v; n += 1
+                        if n == win { frames.append(Float(10 * log10(acc / Double(win) + 1e-10))); acc = 0; n = 0 }
+                    }
+                }
+                carry = Data(carry.suffix(carry.count - usable))
+            }
+            p.waitUntilExit()
+            guard !frames.isEmpty else { return nil }
+            return LoudnessProfile(frameDB: frames, duration: info.duration)
+        }.value
     }
 }

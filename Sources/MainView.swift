@@ -44,6 +44,19 @@ struct FlatSlider: View {
     }
 }
 
+/// Curseur « Intensité » des blancs retirés : de Doux (silences longs seulement, respiration large) à Serré (toutes les pauses, respiration courte). Mémorisé.
+struct IntensitySlider: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(L.t("sil.intensity")).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.text2).lineLimit(1)
+            Text(L.t("sil.soft")).font(.system(size: 11)).foregroundStyle(Theme.text2).lineLimit(1)
+            FlatSlider(value: $model.opts.trimIntensity)
+            Text(L.t("sil.tight")).font(.system(size: 11)).foregroundStyle(Theme.text2).lineLimit(1)
+        }
+    }
+}
+
 // MARK: - Fenêtre
 
 struct MainView: View {
@@ -423,7 +436,7 @@ struct PiecesCard: View {
             ForEach(Array(doc.segments.enumerated()), id: \.element.id) { i, s in
                 PieceRow(doc: doc, index: i, segment: s, name: previewName(outs, i), player: model.player)
             }
-            if !doc.segments.isEmpty, doc.info.audio != nil { trimButton }
+            if !doc.segments.isEmpty, doc.info.audio != nil { trimBlock }
             if let first = shifts.first {
                 InfoBox {
                     (Text(L.t("pieces.shift2", first.0, Fmt.time(first.2)) + " ") + Text(L.t("pieces.shift2.cta")).fontWeight(.bold) + Text(" " + L.t("pieces.shift2.tail")))
@@ -431,6 +444,18 @@ struct PiecesCard: View {
                 }
             }
         }
+    }
+    /// Curseur d'intensité, durée qu'on gagnerait, et le bouton qui l'applique (le niveau sonore est mesuré une fois à l'affichage).
+    private var trimBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            IntensitySlider(model: model)
+            if doc.silences != nil {
+                let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.tighten(doc.segments, inside: true).reduce(0) { $0 + $1.duration }
+                Text(L.t("sil.est", Fmt.time(max(gain, 0), decimals: true)) + " · " + Fmt.breath(model.opts.trimIntensity) + " s").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
+            }
+            trimButton
+        }
+        .task { await doc.ensureSilences() }
     }
     /// « Retirer les blancs » : resserre tout de suite les morceaux sur la parole (0,2 s de respiration gardée) ; ⌘Z rétablit.
     private var trimButton: some View {
@@ -643,15 +668,16 @@ struct ExportOptionsSheet: View {
                     if v { if !doc.info.isAudioOnly { model.opts.passthrough = false }; Task { await doc.ensureSilences() } }       // couper dans les blancs demande une recompression
                 }))
             if model.opts.trimSilence {
+                IntensitySlider(model: model)
                 let note: String = {
                     guard let sil = doc.silences else { return L.t("exp.silence.busy") }
                     if let f = people {
                         let segs = f.protoUnion.map { Segment(start: $0.start, end: $0.end) }
-                        let gain = segs.reduce(0) { $0 + $1.duration } - Silence.tighten(segs, silences: sil, inside: true).reduce(0) { $0 + $1.duration }
-                        return L.t("exp.silence.result.merge", Fmt.time(max(gain, 0), decimals: true))
+                        _ = sil; let gain = segs.reduce(0) { $0 + $1.duration } - doc.tighten(segs, inside: true).reduce(0) { $0 + $1.duration }
+                        return L.t("exp.silence.result.merge", Fmt.time(max(gain, 0), decimals: true), Fmt.breath(model.opts.trimIntensity))
                     }
                     let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.exportSegments(eff).reduce(0) { $0 + $1.duration }
-                    return L.t(model.opts.merge ? "exp.silence.result.merge" : "exp.silence.result.edges", Fmt.time(max(gain, 0), decimals: true))
+                    return L.t(model.opts.merge ? "exp.silence.result.merge" : "exp.silence.result.edges", Fmt.time(max(gain, 0), decimals: true), Fmt.breath(model.opts.trimIntensity))
                 }()
                 Text(note + (doc.info.isAudioOnly ? "" : " " + L.t("exp.silence.recode"))).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
             }
