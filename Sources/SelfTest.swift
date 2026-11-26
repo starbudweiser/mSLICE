@@ -633,8 +633,24 @@ enum UITest {
         _ = key("k", 40)
         if shots == "1" { delegate.snapshot(to: "build/ui-editor.png") }
 
-        // export complet : un fichier par morceau, dans le dossier de test
-        var o = model.opts; o.folder = out.path; o.passthrough = true; o.merge = false; o.format = .same; model.opts = o
+        // feuille d'options (bouton réglages de la barre d'export) : s'ouvre avec le bon nombre de fichiers, Échap / Annuler la ferment sans exporter
+        var o = model.opts; o.folder = out.path; o.passthrough = true; o.merge = false; o.format = .same; o.voiceOnly = false; model.opts = o
+        model.requestPiecesExport()
+        check(model.sheet == .options && model.request?.count == d.segments.count, "feuille d'options : ouverte pour \(model.request?.count ?? -1) fichiers")
+        model.requestPiecesExport()
+        check(model.sheet == .options, "feuille d'options : une seconde demande ne l'empile pas")
+        model.cancelOptions()
+        check(model.sheet == .none && model.request == nil && model.run == nil, "feuille d'options : Annuler ferme sans exporter")
+        check(((try? FileManager.default.contentsOfDirectory(atPath: out.path)) ?? []).isEmpty, "feuille d'options : aucun fichier écrit par Annuler")
+        model.requestPiecesExport()
+        model.confirmExport()
+        check(model.sheet == .export || model.sheet == .done, "feuille d'options : Exporter lance l'export")
+        for _ in 0 ..< 200 { if model.sheet == .done { break }; await wait(0.1) }
+        check(model.sheet == .done && model.run?.error == nil, "feuille d'options : export terminé (\(model.run?.items.count ?? 0) fichiers)")
+        model.closeSheet()
+        for f in (try? FileManager.default.contentsOfDirectory(atPath: out.path)) ?? [] { try? FileManager.default.removeItem(at: out.appendingPathComponent(f)) }
+
+        // export complet : un fichier par morceau, dans le dossier de test (bouton « Exporter N morceaux » : export direct)
         model.exportNow()
         for _ in 0 ..< 200 { if model.sheet == .done { break }; await wait(0.1) }
         check(model.sheet == .done && model.run?.error == nil, "export : fenêtre « terminé » (\(model.run?.items.count ?? 0) fichiers)")

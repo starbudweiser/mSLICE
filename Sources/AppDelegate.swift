@@ -182,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Menus
 
     @objc func openFiles() { AppModel.shared.chooseFiles() }
-    @objc func exportCmd() { AppModel.shared.requestPiecesExport() }
+    @objc func exportCmd() { AppModel.shared.exportNow() }
     @objc func closeFile() { if let d = AppModel.shared.current { AppModel.shared.close(d) } }
     @objc func undoCmd() { AppModel.shared.current?.undo() }
     @objc func shortcutsCmd() { AppModel.shared.showShortcuts.toggle() }

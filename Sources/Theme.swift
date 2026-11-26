@@ -43,7 +43,7 @@ enum Theme {
     // Mesures
     static let rWindow: CGFloat = 12, rCard: CGFloat = 12, rControl: CGFloat = 8
     static let barHeight: CGFloat = 48, controlHeight: CGFloat = 30
-    static let sidebarWidth: CGFloat = 232, rightWidth: CGFloat = 304
+    static let sidebarWidth: CGFloat = 232, rightWidth: CGFloat = 320
 }
 
 /// Pose le thème choisi (clair, sombre, automatique) sur toute l'appli.
@@ -137,19 +137,72 @@ struct Chip: View {
 struct Segmented<T: Hashable>: View {
     let options: [(T, String)]
     @Binding var selection: T
+    /// Onglets du panneau de droite : fond de carte et filet, 28 pt de haut (maquette ergonomie.html).
+    var tabs = false
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options.indices, id: \.self) { i in
                 let (v, label) = options[i]
                 Button { selection = v } label: {
                     Text(label).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.85)
-                        .frame(maxWidth: .infinity).frame(height: 26)
+                        .frame(maxWidth: .infinity).frame(height: tabs ? 28 : 26)
                         .foregroundStyle(selection == v ? Theme.onAccent : Theme.text2)
                         .background(selection == v ? Theme.accent : .clear, in: Capsule())
                 }.buttonStyle(.plain)
             }
         }
-        .padding(3).background(Theme.ctl, in: Capsule())
+        .padding(3).background(tabs ? Theme.card : Theme.ctl, in: Capsule())
+        .overlay { if tabs { Capsule().strokeBorder(Theme.line, lineWidth: 0.5) } }
+    }
+}
+
+/// Engrenage de la maquette : un disque central et huit rayons (barre de titre).
+struct GearGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let s = min(r.width, r.height) / 16, ox = r.minX, oy = r.minY
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: ox + x * s, y: oy + y * s) }
+        p.addEllipse(in: CGRect(x: ox + 5.8 * s, y: oy + 5.8 * s, width: 4.4 * s, height: 4.4 * s))
+        for (a, b) in [((8.0, 1.8), (8.0, 3.4)), ((8.0, 12.6), (8.0, 14.2)), ((1.8, 8.0), (3.4, 8.0)), ((12.6, 8.0), (14.2, 8.0)),
+                       ((3.6, 3.6), (4.7, 4.7)), ((11.3, 11.3), (12.4, 12.4)), ((3.6, 12.4), (4.7, 11.3)), ((11.3, 4.7), (12.4, 3.6))] {
+            p.move(to: pt(a.0, a.1)); p.addLine(to: pt(b.0, b.1))
+        }
+        return p
+    }
+}
+
+/// Barres de voix de la maquette (avatar d'une voix sans visage, bouton « voix seules »).
+struct WaveGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let s = min(r.width, r.height) / 16, ox = r.minX, oy = r.minY
+        for (x, y1, y2) in [(2.0, 6.0, 10.0), (5.0, 3.5, 12.5), (8.0, 5.5, 10.5), (11.0, 2.5, 13.5), (14.0, 6.0, 10.0)] {
+            p.move(to: CGPoint(x: ox + x * s, y: oy + y1 * s)); p.addLine(to: CGPoint(x: ox + x * s, y: oy + y2 * s))
+        }
+        return p
+    }
+}
+
+/// Réglages d'export de la maquette : deux curseurs.
+struct SlidersGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let s = min(r.width, r.height) / 16, ox = r.minX, oy = r.minY
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: ox + x * s, y: oy + y * s) }
+        for (a, b) in [((2.0, 4.0), (9.0, 4.0)), ((12.0, 4.0), (14.0, 4.0)), ((2.0, 12.0), (4.0, 12.0)), ((7.0, 12.0), (14.0, 12.0))] { p.move(to: pt(a.0, a.1)); p.addLine(to: pt(b.0, b.1)) }
+        p.addEllipse(in: CGRect(x: ox + 9 * s, y: oy + 2.5 * s, width: 3 * s, height: 3 * s))
+        p.addEllipse(in: CGRect(x: ox + 4 * s, y: oy + 10.5 * s, width: 3 * s, height: 3 * s))
+        return p
+    }
+}
+
+/// Encadré d'information teinté (maquette : fond ambre à 14 %).
+struct InfoBox<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack(spacing: 10) { content }
+            .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.warn.opacity(0.14), in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
     }
 }
 

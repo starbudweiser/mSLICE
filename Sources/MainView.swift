@@ -104,7 +104,7 @@ struct TitleBar: View {
                         .buttonStyle(FlatButton(kind: tab == 1 ? .primary : .normal)).help(L.t("agent.title"))
                 }
                 Button { model.showShortcuts.toggle() } label: { HStack(spacing: 8) { Text(L.t("bar.shortcuts")); Key("⌘/") } }.buttonStyle(FlatButton())
-                Button { AppDelegate.shared?.openSettings() } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .medium)).frame(width: 6) }.buttonStyle(FlatButton())
+                Button { AppDelegate.shared?.openSettings() } label: { GearGlyph().stroke(Theme.text, style: StrokeStyle(lineWidth: 1.6, lineCap: .round)).frame(width: 15, height: 15).frame(width: 6) }.buttonStyle(FlatButton())
             }
         }
         .frame(height: Theme.barHeight).padding(.trailing, 16)
@@ -236,9 +236,9 @@ struct TransportBar: View {
     var body: some View {
         HStack(spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(Fmt.time(player.time)).font(.system(size: 22, weight: .semibold).monospacedDigit())
-                Text("/ " + Fmt.time(doc.duration)).font(.system(size: 12)).foregroundStyle(Theme.text2)
-            }.padding(.trailing, 6)
+                Text(Fmt.time(player.time)).font(.system(size: 22, weight: .semibold).monospacedDigit()).lineLimit(1).fixedSize()
+                Text("/ " + Fmt.time(doc.duration)).font(.system(size: 12)).foregroundStyle(Theme.text2).lineLimit(1).fixedSize()
+            }.padding(.trailing, 6).layoutPriority(1)
             roundButton("backward.end.fill") { player.pause(); player.seek(doc.segments.last(where: { $0.start < player.time - 0.05 })?.start ?? 0) }
             roundButton("backward.fill") { player.pause(); player.seek(player.time - 1) }
             Button { player.togglePlay() } label: { Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 14, weight: .semibold)).frame(width: 42, height: 34)
@@ -271,10 +271,7 @@ struct TransportBar: View {
     }
     private func scalpelButton(_ key: String, _ label: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                ScalpelShape().stroke(Theme.text, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)).frame(width: 16, height: 16)
-                Key(key); Text(label)
-            }
+            HStack(spacing: 8) { Text(label); Key(key) }
         }.buttonStyle(FlatButton(height: 34))
     }
 }
@@ -285,6 +282,7 @@ struct TimelineCard: View {
     @ObservedObject private var find: FindModel      // la piste de résultats ajoute sa hauteur à la timeline
     @ObservedObject private var dialogues: DialogueModel      // la piste « Dialogues » aussi
     let player: PlayerModel          // pas observé : la tête de lecture est un calque qui se met à jour seul
+    @AppStorage("showLegend") private var showLegend = true
     init(model: AppModel, doc: Doc, player: PlayerModel) { self.model = model; self.doc = doc; self.player = player; self.find = doc.find; self.dialogues = doc.dialogues }
     var body: some View {
         VStack(spacing: 0) {
@@ -298,10 +296,17 @@ struct TimelineCard: View {
                 Menu {
                     Button(L.t("tl.auto")) { Task { await autoTrim() } }.disabled(doc.info.audio == nil)
                     if dialogues.hasLines { Toggle(L.t("dlg.lane.chip"), isOn: $dialogues.showLane) }
+                    Toggle(L.t("tl.legend"), isOn: $showLegend)
                 } label: { Text("⋯").font(.system(size: 13, weight: .bold)).frame(width: 30, height: 24).background(Theme.ctl, in: Capsule()) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }.frame(height: 26).padding(.bottom, 4)
             TimelineRepresentable(doc: doc, player: player, snap: model.snap && model.opts.passthrough).frame(height: TimelineView.height(lane: !find.lane.isEmpty, dialogues: dialogues.laneVisible))
+            if showLegend {
+                HStack(spacing: 10) {
+                    legend("I", L.t("key.in")); legend("O", L.t("key.out")); legend(L.t("key.space"), L.t("key.play")); legend("←→", L.t("key.frame")); legend("⌫", L.t("key.delete"))
+                    Spacer(minLength: 0)
+                }.padding(.top, 8).overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 0.5) }.padding(.top, 8)
+            }
         }
         .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
@@ -335,7 +340,7 @@ struct RightPanel: View {
     @AppStorage("rightTab") private var tab = 0          // 0 : couper, 1 : agent (icône de la barre), 2 : personnes, 3 : dialogues
     var body: some View {
         VStack(spacing: 10) {
-            Segmented(options: [(0, L.t("tab.cut")), (2, L.t("tab.people")), (3, L.t("dlg.title"))], selection: $tab)
+            Segmented(options: [(0, L.t("tab.cut")), (2, L.t("tab.people")), (3, L.t("dlg.title"))], selection: $tab, tabs: true)
             if tab == 3 {
                 DialoguePanel(model: model, doc: doc, dialogues: doc.dialogues)
             } else if tab == 1 {
@@ -352,7 +357,8 @@ struct RightPanel: View {
     }
 }
 
-/// Barre d'export unique, en bas du panneau : le résumé de ce qui part, puis un seul bouton qui ouvre la feuille d'options.
+/// Barre d'export unique, en bas du panneau (maquette) : le résumé de ce qui part, le bouton « Exporter N morceaux » (export direct avec les réglages courants)
+/// et le bouton réglages, qui ouvre la feuille d'options.
 struct ExportBar: View {
     @ObservedObject var model: AppModel
     @ObservedObject var doc: Doc
@@ -362,13 +368,21 @@ struct ExportBar: View {
         let est = Planner.estimate(info: doc.info, segments: doc.segments, opts: o)
         VStack(spacing: 8) {
             Rectangle().fill(Theme.line).frame(height: 0.5)
-            HStack(alignment: .firstTextBaseline) {
-                Text(n == 0 ? L.t("bar.nothing") : (n == 1 ? L.t("export.files.one") : L.t("export.files", n))).font(.system(size: 12, weight: .semibold))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if n == 0 { Text(L.t("bar.nothing")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
+                else {
+                    (Text(n == 1 ? L.t("export.files.one") : L.t("export.files", n)).fontWeight(.semibold).foregroundColor(Theme.text) + Text(" · " + settingsText(o)).foregroundColor(Theme.text2))
+                        .font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
+                }
                 Spacer(minLength: 6)
-                if n > 0 { Text("≈ " + Fmt.size(est.bytes)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2) }
+                if n > 0 { Text("≈ " + Fmt.size(est.bytes)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize() }
             }
-            Button { model.requestPiecesExport() } label: { Text(doc.segments.count == 1 ? L.t("exp.bar.one") : L.t("exp.bar.n", doc.segments.count)).frame(maxWidth: .infinity) }
-                .buttonStyle(FlatButton(kind: .sand, height: 42)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0)
+            HStack(spacing: 8) {
+                Button { model.exportNow() } label: { Text(doc.segments.count == 1 ? L.t("exp.bar.one") : L.t("exp.bar.n", doc.segments.count)).frame(maxWidth: .infinity) }
+                    .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0)
+                Button { model.requestPiecesExport() } label: { SlidersGlyph().stroke(Theme.text, style: StrokeStyle(lineWidth: 1.6, lineCap: .round)).frame(width: 15, height: 15).frame(width: 16) }
+                    .buttonStyle(FlatButton(height: 40)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0).help(L.t("exp.settings"))
+            }
             if doc.canClean && doc.segments.isEmpty {
                 Button { model.exportWholeClean() } label: {
                     if case .building(let p) = doc.clean { Text(L.t("clean.building", Int((p * 100).rounded()))).frame(maxWidth: .infinity) }
@@ -376,6 +390,15 @@ struct ExportBar: View {
                 }.buttonStyle(FlatButton(height: 34))
             }
         }
+    }
+    /// Ce qui change par rapport à l'original, en peu de mots : « mêmes réglages que l'original » tant qu'on ne touche à rien.
+    private func settingsText(_ o: ExportOptions) -> String {
+        func lower(_ s: String) -> String { s.prefix(1).lowercased() + s.dropFirst() }
+        if o.passthrough, o.format == .same, !o.voiceOnly { return L.t("exp.bar.same") }
+        let f = o.resolvedFormat(for: doc.info).title
+        var s = o.passthrough ? (o.format == .same ? L.t("exp.bar.fmt.same") : L.t("exp.format.copyto", f)) : lower(L.t("exp.format.reto", f))
+        if o.voiceOnly, doc.info.audio != nil { s += " · " + lower(L.t("clean.export")) }
+        return s
     }
 }
 
@@ -401,8 +424,10 @@ struct PiecesCard: View {
                 PieceRow(doc: doc, index: i, segment: s, name: previewName(outs, i), player: model.player)
             }
             if let first = shifts.first {
-                (Text(L.t("pieces.shift.lead")).foregroundColor(Theme.warn).fontWeight(.semibold) + Text(" " + L.t("pieces.shift", first.0, Fmt.time(first.2), Fmt.dec(first.1 - first.2))))
-                    .font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
+                InfoBox {
+                    (Text(L.t("pieces.shift2", first.0, Fmt.time(first.2)) + " ") + Text(L.t("pieces.shift2.cta")).fontWeight(.bold) + Text(" " + L.t("pieces.shift2.tail")))
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -484,7 +509,7 @@ struct ExportOptionsSheet: View {
     private var waitingClean: Bool { model.opts.voiceOnly && doc.canClean && doc.clean != .ready }
 
     var body: some View {
-        SheetBox(width: 460) {
+        SheetBox(width: 440, padding: 18, spacing: 14) {
             Text(title).font(.system(size: 16, weight: .bold))
             question(L.t("exp.q.files")) { filesChoice }
             question(L.t("exp.q.format")) { formatMenu; Text(L.t(model.opts.passthrough ? "exp.format.copy.note" : "exp.format.re.note")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading) }
@@ -497,9 +522,9 @@ struct ExportOptionsSheet: View {
             if more { moreOptions }
             HStack(spacing: 8) {
                 Spacer()
-                Button { model.cancelOptions() } label: { HStack(spacing: 8) { Text(L.t("common.cancel")); Key("Esc") } }.buttonStyle(FlatButton(height: 36))
-                Button { model.confirmExport() } label: { Text(waitingClean ? L.t("clean.building", Int(cleanPercent)) : goLabel).frame(minWidth: 150) }
-                    .buttonStyle(FlatButton(kind: .sand, height: 36)).opacity(waitingClean || request.count == 0 ? 0.5 : 1).disabled(waitingClean || request.count == 0)
+                Button { model.cancelOptions() } label: { Text(L.t("common.cancel")).frame(width: 76) }.buttonStyle(FlatButton(height: 40)).keyboardShortcut(.cancelAction)
+                Button { model.confirmExport() } label: { Text(waitingClean ? L.t("clean.building", Int(cleanPercent)) : goLabel).frame(width: 166) }
+                    .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(waitingClean || request.count == 0 ? 0.5 : 1).disabled(waitingClean || request.count == 0)
             }
         }
     }
@@ -686,10 +711,12 @@ struct SheetLayer: View {
 
 struct SheetBox<Content: View>: View {
     var width: CGFloat = 520
+    var padding: CGFloat = 20
+    var spacing: CGFloat = 12
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) { content }
-            .padding(20).frame(width: width)
+        VStack(alignment: .leading, spacing: spacing) { content }
+            .padding(padding).frame(width: width)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous).strokeBorder(Theme.line, lineWidth: 0.5))
             .shadow(color: .black.opacity(0.28), radius: 16, y: 8)
