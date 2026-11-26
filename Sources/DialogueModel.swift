@@ -15,6 +15,7 @@ final class DialogueModel: ObservableObject {
     @Published private(set) var sources: [SubtitleSource] = []
     @Published var choice: Choice = .transcribe
     @Published var language = "fr-FR"
+    private var languageChosen = false          // l'utilisateur a choisi la langue lui-même : plus de détection
     @Published private(set) var assets: TranscriptionSupport.AssetState = .unavailable
     @Published var askInstall = false                      // l'accord de l'utilisateur est demandé avant de télécharger les ressources de langue
     @Published private(set) var installing = false
@@ -250,16 +251,16 @@ final class DialogueModel: ObservableObject {
 
     // MARK: Source
 
-    static func defaultLanguage(_ info: MediaInfo) -> String {
+    static func defaultLanguage(_ info: MediaInfo, trustTag: Bool = true) -> String {
         let map: [String: String] = ["fre": "fr-FR", "fra": "fr-FR", "fr": "fr-FR", "eng": "en-US", "en": "en-US", "spa": "es-ES", "es": "es-ES", "ita": "it-IT", "it": "it-IT", "ger": "de-DE", "deu": "de-DE", "de": "de-DE"]
-        if let l = info.audio?.lang.lowercased(), let m = map[l] { return m }
+        if trustTag, let l = info.audio?.lang.lowercased(), let m = map[l] { return m }
         let sys = (Locale.preferredLanguages.first ?? "en").prefix(2).lowercased()
         return map[String(sys)] ?? "en-US"
     }
 
     func refreshAssets() async { assets = await TranscriptionSupport.assetState(language) }
 
-    func setLanguage(_ code: String) { language = code; Task { await refreshAssets() } }
+    func setLanguage(_ code: String) { language = code; languageChosen = true; Task { await refreshAssets() } }
 
     func title(_ s: SubtitleSource) -> String {
         let lang = s.language.isEmpty ? "" : " · " + s.language
@@ -289,6 +290,18 @@ final class DialogueModel: ObservableObject {
             guard canTranscribe else { fail("dlg.fail.unavailable"); return }
             Task { [weak self] in
                 guard let self else { return }
+                // Langue non choisie par l'utilisateur : la balise du fichier se trompe souvent (« eng » pour des paroles en français), on écoute un extrait.
+                if !self.languageChosen {
+                    self.begin(step: "speech")
+                    let job = AnalysisJob(); self.job = job
+                    let sys = (Locale.preferredLanguages.first ?? "en").prefix(2).lowercased()
+                    let cands = [self.language, Self.defaultLanguage(self.doc.info, trustTag: false), "fr-FR", "en-US"] + TranscriptionSupport.languages.map(\.code).filter { $0.hasPrefix(sys) }
+                    let guess = await Transcriber.detectLanguage(self.doc.info, candidates: cands, job: job)
+                    self.job = nil
+                    if job.cancelled { return }
+                    if let guess { self.language = guess }
+                    self.phase = .source
+                }
                 await self.refreshAssets()
                 switch self.assets {
                 case .installed: self.transcribe()

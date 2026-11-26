@@ -266,8 +266,9 @@ final class AppModel: ObservableObject {
     }
 
     /// Options d'un export de `d` : « voix seules » seulement si le fichier a du son et si la piste est prête (sinon on la lance et on renonce).
-    private func exportOptions(for d: Doc) -> ExportOptions? {
+    private func exportOptions(for d: Doc, voice: Bool = false) -> ExportOptions? {
         var o = opts
+        if voice { o.voiceOnly = true }
         if o.voiceOnly {
             if d.info.audio == nil { o.voiceOnly = false }
             else if d.clean != .ready { d.buildClean(); flash(L.t("clean.notready")); return nil }
@@ -286,8 +287,8 @@ final class AppModel: ObservableObject {
     }
 
     /// Exporte directement des groupes de moments choisis dans l'onglet Trouver (un fichier par groupe, chacun fusionné), sans toucher aux morceaux du fichier.
-    func exportGroups(_ groups: [(name: String, segments: [(start: Double, end: Double)])]) {
-        guard let d = current, sheet == .none, groups.contains(where: { !$0.segments.isEmpty }), var o = exportOptions(for: d) else { return }
+    func exportGroups(_ groups: [(name: String, segments: [(start: Double, end: Double)])], voice: Bool = false) {
+        guard let d = current, sheet == .none, groups.contains(where: { !$0.segments.isEmpty }), var o = exportOptions(for: d, voice: voice) else { return }
         o.merge = true
         if o.passthrough, !Planner.canCopy(info: d.info, to: o.format), !o.voiceOnly { flash(L.t("err.cantcopy")); return }
         if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
@@ -298,6 +299,16 @@ final class AppModel: ObservableObject {
             outs += Planner.outputs(info: d.info, segments: g.segments.map { Segment(start: $0.start, end: $0.end) }, opts: o, keyframes: d.keyframes, base: d.baseName, mergeName: "\(base) – \(g.name)")
         }
         startExport(d, outs, o)
+    }
+
+    /// Le fichier entier en « voix seules », sans passer par des morceaux (la piste est fabriquée d'abord si besoin, puis l'export part tout seul).
+    func exportWholeClean() {
+        guard let d = current, sheet == .none, d.canClean else { return }
+        let go = { [weak self, weak d] in
+            guard let self, let d, self.current === d else { return }
+            self.exportGroups([(name: L.t("clean.suffix"), segments: [(start: 0, end: d.duration)])], voice: true)
+        }
+        if d.clean == .ready { go() } else { d.buildClean { ok in if ok { go() } } }
     }
 
     private func startExport(_ d: Doc, _ outs: [OutputItem], _ o: ExportOptions) {

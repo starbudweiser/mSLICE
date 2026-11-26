@@ -343,6 +343,12 @@ struct RightPanel: View {
                 Button { model.exportNow() } label: {
                     Text(model.opts.merge ? L.t("export.go.merged") : L.t(doc.segments.count == 1 ? "export.go.one" : "export.go.n", doc.segments.count)).frame(maxWidth: .infinity)
                 }.buttonStyle(FlatButton(kind: .sand, height: 42)).opacity(doc.segments.isEmpty ? 0.4 : 1).disabled(doc.segments.isEmpty)
+                if doc.canClean {
+                    Button { model.exportWholeClean() } label: {
+                        if case .building(let p) = doc.clean { Text(L.t("clean.building", Int((p * 100).rounded()))).frame(maxWidth: .infinity) }
+                        else { Text(L.t("clean.exportWhole")).frame(maxWidth: .infinity) }
+                    }.buttonStyle(FlatButton(height: 34))
+                }
             }
         }
         .padding(.top, 14).padding(.bottom, 14).padding(.trailing, 14)

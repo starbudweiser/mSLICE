@@ -5,6 +5,7 @@
 // Sur macOS 14-15 la transcription n'existe pas : l'interface grise l'option.
 import AVFoundation
 import Foundation
+import NaturalLanguage
 import Speech
 
 /// Un mot et sa plage de temps.
@@ -71,6 +72,32 @@ enum Transcriber {
         let r = await Run.exec(ff, ["-v", "error", "-y", "-nostdin", "-i", info.url.path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", tmp.path])
         guard r.status == 0 else { try? FileManager.default.removeItem(at: tmp); return nil }
         return tmp
+    }
+
+    /// Devine la langue parlée : un extrait de 40 s est transcrit dans chaque langue candidate déjà installée, puis le texte obtenu est jugé par la
+    /// reconnaissance de langue d'Apple (NaturalLanguage) : une langue fausse donne peu de mots et du charabia. nil si le doute subsiste ou s'il n'y a qu'une langue installée.
+    static func detectLanguage(_ info: MediaInfo, candidates: [String], job: AnalysisJob) async -> String? {
+        guard #available(macOS 26.0, *), info.audio != nil, let ff = Tools.ffmpeg else { return nil }
+        var installed: [String] = []
+        for c in candidates where !installed.contains(c) { if await SpeechRunner.assetState(c) == .installed { installed.append(c) } }
+        guard installed.count > 1, !job.cancelled else { return nil }
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("mslice-lang-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let len = min(40.0, info.duration), start = info.duration > 120 ? info.duration * 0.25 : 0
+        let r = await Run.exec(ff, ["-v", "error", "-y", "-nostdin", "-ss", String(format: "%.2f", start), "-t", String(format: "%.2f", len), "-i", info.url.path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", tmp.path])
+        guard r.status == 0 else { return nil }
+        var scores: [(code: String, score: Double)] = []
+        for c in installed {
+            if job.cancelled { return nil }
+            guard let words = await SpeechRunner.words(wav: tmp, language: c, duration: len, job: job, progress: { _ in }) else { continue }
+            let text = words.map(\.text).joined(separator: " ")
+            let rec = NLLanguageRecognizer(); rec.processString(text)
+            let p = rec.languageHypotheses(withMaximum: 6)[NLLanguage(rawValue: String(c.prefix(2)))] ?? 0
+            scores.append((c, p * min(1, Double(words.count) / 30)))
+        }
+        scores.sort { $0.score > $1.score }
+        guard let best = scores.first, best.score >= 0.3, best.score > (scores.dropFirst().first?.score ?? 0) + 0.1 else { return nil }
+        return best.code
     }
 
     /// Transcription complète d'un fichier en répliques ; nil si annulée, impossible (macOS < 26, ressources absentes, pas de son).

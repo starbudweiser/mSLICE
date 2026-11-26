@@ -94,6 +94,8 @@ enum L {
         "clean.export": ["Voix seules", "Voice only", "Solo voces", "Solo voci"],
         "clean.exportNote": ["L'audio exporté est la voix isolée (mono) ; l'image n'est pas recompressée. Sans recompression, seul l'audio est refait.", "The exported audio is the isolated voice (mono); the picture is not re-encoded. With no re-encoding, only the audio is redone.", "El audio exportado es la voz aislada (mono); la imagen no se recomprime. Sin recompresión, solo se rehace el audio.", "L'audio esportato è la voce isolata (mono); l'immagine non viene ricodificata. Senza ricodifica, si rifà solo l'audio."],
         "clean.building": ["Nettoyage de l'audio… %d %%", "Cleaning the audio… %d%%", "Limpiando el audio… %d %%", "Pulizia dell'audio… %d%%"],
+        "clean.exportWhole": ["Exporter la voix seule (fichier entier)", "Export the voice only (whole file)", "Exportar solo la voz (archivo entero)", "Esporta solo la voce (file intero)"],
+        "clean.suffix": ["voix seule", "voice only", "solo voz", "solo voce"],
         "clean.ready": ["Piste prête", "Track ready", "Pista lista", "Traccia pronta"],
         "clean.notready": ["Nettoyage de l'audio en cours : relancez l'export quand il sera fini.", "The audio is still being cleaned: start the export again when it is done.", "Se está limpiando el audio: vuelve a exportar cuando termine.", "Pulizia dell'audio in corso: riavvia l'esportazione al termine."],
         "clean.unavailable": ["L'isolation de voix n'est pas disponible sur ce Mac.", "Voice isolation is not available on this Mac.", "El aislamiento de voz no está disponible en este Mac.", "L'isolamento vocale non è disponibile su questo Mac."],

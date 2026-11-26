@@ -190,6 +190,10 @@ enum DialoguesTest {
                 let lang = DialogueModel.defaultLanguage(real)
                 let state = await TranscriptionSupport.assetState(lang)
                 print("INFO   langue \(lang) : \(state)")
+                // détection de la langue : l'anglais est proposé en premier (balise fausse), le français doit l'emporter si les paroles sont françaises
+                let td = Date()
+                let guess = await Transcriber.detectLanguage(real, candidates: ["en-US", "fr-FR"], job: AnalysisJob())
+                print("INFO   langue devinée : \(guess ?? "aucune") en \(String(format: "%.1f", Date().timeIntervalSince(td))) s")
                 if state == .installed {
                     let t0 = Date()
                     let job = AnalysisJob()
