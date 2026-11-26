@@ -76,7 +76,8 @@ final class FindModel: ObservableObject {
     @Published private(set) var lane: [LanePassage] = []
     @Published var added: AddedInfo?
     let thumbs = ThumbStore()
-    private var finder: Finder?
+    private var finder: Finder? { didSet { protoCache = nil } }
+    private var protoCache: (key: String, value: [(id: String, name: String, segments: [(start: Double, end: Double)])])?     // la barre du bas relit ces moments à chaque affichage : un seul calcul par choix
     private var job: AnalysisJob?
 
     // Personnages (modèle optionnel) : index des visages, reconnaissance à la demande, corrections de l'utilisateur
@@ -383,11 +384,15 @@ final class FindModel: ObservableObject {
     var protoPieces: [(id: String, name: String, segments: [(start: Double, end: Double)])] {
         guard let finder else { return [] }
         let whole = protoWhole && (index?.hasVideo ?? false)
-        return protoSel.compactMap { id in
+        let key = protoSel.joined(separator: ",") + "|\(protoMode)|\(whole)|" + protagonists.map { "\($0.id)\($0.name ?? "")" }.joined(separator: ",")
+        if let c = protoCache, c.key == key { return c.value }
+        let value: [(id: String, name: String, segments: [(start: Double, end: Double)])] = protoSel.compactMap { id in
             guard let p = protagonist(id), let t = protoTerm(p, protoMode) else { return nil }
             var q = FindQuery(terms: [t]); q.wholeShots = whole
             return (id, p.title, finder.run(q).segments)
         }
+        protoCache = (key, value)
+        return value
     }
 
     /// Tous les moments choisis, fusionnés (un seul fichier ou ajout aux morceaux).

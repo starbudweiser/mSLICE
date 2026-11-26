@@ -276,6 +276,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             if let w = self.arg("--whole") { d.find.wholeShots = w != "0" }
                         }
                         if st == "find-added" { d.find.addToPieces() }
+                        if st == "find-export" {                                                         // feuille d'export des personnes choisies (--more : « Plus d'options » ouvert)
+                            let each = d.find.protoOut == .each
+                            let n = each ? d.find.exportGroups(each: true).filter { !$0.segments.isEmpty }.count : (d.find.protoUnion.isEmpty ? 0 : 1)
+                            model.requestExport(ExportRequest(kind: .people(d.find), count: n, run: {}))
+                        }
                     }
                 }
             }
@@ -293,6 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   ChatMessage(role: .note, text: "Dossier refusé : l'agent n'écrit que dans le dossier du fichier source.", failed: true)]
                 }
             }
+            if self.arg("--more") != nil { UserDefaults.standard.set(true, forKey: "capture.more"); let prev = self.restoreAfterCapture; self.restoreAfterCapture = { prev?(); UserDefaults.standard.removeObject(forKey: "capture.more") } }
             if self.arg("--state") == "options" { model.requestPiecesExport() }
             if self.arg("--state") == "export", let d = model.current { let r = ExportRun(); r.items = d.segments.map { ExportRun.Item(name: $0.id.uuidString.prefix(8) + ".mp4", duration: $0.duration, fraction: 0.5, state: .running) }; model.run = r; model.sheet = .export }
         }

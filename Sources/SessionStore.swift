@@ -13,9 +13,15 @@ enum Env {
     }()
     static var supportDir: URL {
         let d = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/\(isDev ? "mSLICE DEV" : "mSLICE")", isDirectory: true)
-        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        _ = secured                                                    // dossier déjà existant (versions précédentes) : droits resserrés une fois
         return d
     }
+    /// Sessions, transcriptions, visages et pistes de voix : lisibles par l'utilisateur seul (0700).
+    private static let secured: Void = {
+        let d = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/\(isDev ? "mSLICE DEV" : "mSLICE")", isDirectory: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: d.path)
+    }()
     /// Lecture d'un réglage de l'appli (même domaine que `UserDefaults.standard` de l'appli), utilisable depuis `mslice-mcp`.
     static func pref(_ key: String) -> Any? { CFPreferencesCopyAppValue(key as CFString, bundleID as CFString) }
 }

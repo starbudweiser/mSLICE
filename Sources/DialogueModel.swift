@@ -10,7 +10,8 @@ final class DialogueModel: ObservableObject {
     enum Phase { case source, extracting, list, send, sending, sent }
     enum Choice: Hashable { case subtitles(String), transcribe }
 
-    @Published private(set) var data: DialogueSet?
+    @Published private(set) var data: DialogueSet? { didSet { colorOrder = nil } }
+    private var colorOrder: [String: Int]?                  // nom → rang de première réplique, pour la couleur (recalculé quand les répliques ou les noms changent)
     @Published private(set) var phase: Phase = .source
     @Published private(set) var sources: [SubtitleSource] = []
     @Published var choice: Choice = .transcribe
@@ -48,7 +49,7 @@ final class DialogueModel: ObservableObject {
         if let s = DialogueStore.load(doc.info), !s.lines.isEmpty { data = s; phase = .list }
         choice = sources.first.map { .subtitles($0.id) } ?? .transcribe
         Task { [weak self] in await self?.refreshAssets() }
-        findSink = doc.find.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.objectWillChange.send() } }      // un protagoniste renommé change les noms affichés
+        findSink = doc.find.objectWillChange.sink { [weak self] _ in self?.colorOrder = nil; DispatchQueue.main.async { self?.objectWillChange.send() } }      // un protagoniste renommé change les noms affichés
     }
 
     // MARK: Personnages
@@ -106,9 +107,12 @@ final class DialogueModel: ObservableObject {
     }
     func nsColor(named n: String) -> NSColor {
         if let i = doc.find.protagonists.firstIndex(where: { $0.title == n }) { return Self.palette[i % Self.palette.count] }        // une couleur par protagoniste, partout
-        var order: [String] = []
-        for l in data?.lines ?? [] { if let x = displayName(l), !order.contains(x) { order.append(x) } }
-        return Self.palette[(order.firstIndex(of: n) ?? 0) % Self.palette.count]
+        if colorOrder == nil {                                  // une seule passe sur les répliques (la timeline appelle ceci pour chacune à chaque dessin)
+            var m: [String: Int] = [:]
+            for l in data?.lines ?? [] { if let x = displayName(l), m[x] == nil { m[x] = m.count } }
+            colorOrder = m
+        }
+        return Self.palette[(colorOrder?[n] ?? 0) % Self.palette.count]
     }
     func color(named n: String) -> Color { Color(nsColor: nsColor(named: n)) }
     func protagonist(named n: String) -> Protagonist? { protagonists.first { $0.title == n } }

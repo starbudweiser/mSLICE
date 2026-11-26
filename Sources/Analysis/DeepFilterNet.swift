@@ -17,7 +17,8 @@ final class DeepFilterNet {
 
     /// Dossier du modèle compilé : `MSLICE_DFN_MODEL` (essais), sinon `Resources` de l'appli (aussi vu depuis `mslice-mcp`, dans `Contents/MacOS`).
     static var modelURL: URL? {
-        if let p = ProcessInfo.processInfo.environment["MSLICE_DFN_MODEL"] { return URL(fileURLWithPath: p) }
+        // la variable d'essai n'est lue que par l'édition de développement ou la commande d'essai : jamais par l'appli publiée
+        if let p = ProcessInfo.processInfo.environment["MSLICE_DFN_MODEL"], Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true || CommandLine.arguments.contains("--dfn-run") { return URL(fileURLWithPath: p) }
         let name = "DeepFilterNet3.mlmodelc"
         let candidates = [Bundle.main.resourceURL?.appendingPathComponent(name),
                           Bundle.main.executableURL?.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/\(name)")]
@@ -153,76 +154,84 @@ final class DeepFilterNet {
         var maskBin = [Float](repeating: 0, count: F)
 
         while o < nt {
-            if job.cancelled { return false }
-            // il faut les images d'analyse jusqu'à o + nB − 1 + anticipation (2) : caractéristiques et filtrage profond
-            guard analyse(upTo: o + nB + Self.look) else { return false }
-            let eP = inErb.dataPointer.assumingMemoryBound(to: Float.self), sP = inSpec.dataPointer.assumingMemoryBound(to: Float.self)
-            for p in 0..<T {
-                let j = o - K + p, f = j + Self.look                                             // image du réseau, caractéristique décalée de l'anticipation
-                if j >= 0 && f < nt {                                                            // avant le début : contexte nul (comme le remplissage de la chaîne d'origine)
-                    let r = (f - base)
-                    for e in 0..<E { eP[p * E + e] = fErb[r * E + e] }
-                    for d in 0..<(D * 2) { sP[p * D * 2 + d] = fSpec[r * D * 2 + d] }
-                } else {
-                    for e in 0..<E { eP[p * E + e] = 0 }
-                    for d in 0..<(D * 2) { sP[p * D * 2 + d] = 0 }
-                }
-            }
-            func fill(_ a: MLMultiArray, _ v: [Float]) { let p = a.dataPointer.assumingMemoryBound(to: Float.self); for i in 0..<v.count { p[i] = v[i] } }
-            fill(inH1, hEnc); fill(inH2, hErb); fill(inH3, hDf)
-            let feats = try? MLDictionaryFeatureProvider(dictionary: ["feat_erb": inErb, "feat_spec": inSpec, "h_enc": inH1, "h_erb": inH2, "h_df": inH3])
-            guard let feats, let pred = try? model.prediction(from: feats),
-                  let mask = pred.featureValue(for: "mask")?.multiArrayValue, let coefs = pred.featureValue(for: "coefs")?.multiArrayValue,
-                  let nE = pred.featureValue(for: "n_enc")?.multiArrayValue, let nR = pred.featureValue(for: "n_erb")?.multiArrayValue, let nD = pred.featureValue(for: "n_df")?.multiArrayValue else { return false }
-            hEnc = Self.contiguous(nE, 256); hErb = Self.contiguous(nR, 512); hDf = Self.contiguous(nD, 512)
-            let mS = mask.strides.map { $0.intValue }, cS = coefs.strides.map { $0.intValue }          // [1,1,T,32], [1,5,T,96,2]
-            let mP = mask.dataPointer.assumingMemoryBound(to: Float.self), cP = coefs.dataPointer.assumingMemoryBound(to: Float.self)
-
-            let last = min(o + nB, nt)
-            for t in o..<last {
-                let p = K + (t - o)
-                // masque ERB → bins (au-dessus de D) ; filtrage profond en dessous
-                for b in 0..<E {
-                    let m = mP[p * mS[2] + b * mS[3]]
-                    for k in erbEdges[b]..<erbEdges[b + 1] { maskBin[k] = m }
-                }
-                let r = t - base
-                for k in 0..<F { re[k] = specRe[r * F + k] * maskBin[k]; im[k] = specIm[r * F + k] * maskBin[k] }
-                for k in 0..<D {
-                    var ar: Float = 0, ai: Float = 0
-                    for n in 0..<Self.order {
-                        let ti = t - 2 + n
-                        guard ti >= 0 && ti < nt else { continue }
-                        let rr = ti - base
-                        let sr = specRe[rr * F + k], si = specIm[rr * F + k]
-                        let cr = cP[n * cS[1] + p * cS[2] + k * cS[3]], ci = cP[n * cS[1] + p * cS[2] + k * cS[3] + cS[4]]
-                        ar += sr * cr - si * ci; ai += sr * ci + si * cr
+            var failed = false
+            autoreleasepool {                                                  // les prédictions Core ML créent des objets à libérer à chaque bloc : sans réserve, la mémoire monte pendant tout le fichier
+                if job.cancelled { failed = true; return }
+                // il faut les images d'analyse jusqu'à o + nB − 1 + anticipation (2) : caractéristiques et filtrage profond
+                guard analyse(upTo: o + nB + Self.look) else { failed = true; return }
+                let eP = inErb.dataPointer.assumingMemoryBound(to: Float.self), sP = inSpec.dataPointer.assumingMemoryBound(to: Float.self)
+                for p in 0..<T {
+                    let j = o - K + p, f = j + Self.look                                             // image du réseau, caractéristique décalée de l'anticipation
+                    if j >= 0 && f < nt {                                                            // avant le début : contexte nul (comme le remplissage de la chaîne d'origine)
+                        let r = (f - base)
+                        for e in 0..<E { eP[p * E + e] = fErb[r * E + e] }
+                        for d in 0..<(D * 2) { sP[p * D * 2 + d] = fSpec[r * D * 2 + d] }
+                    } else {
+                        for e in 0..<E { eP[p * E + e] = 0 }
+                        for d in 0..<(D * 2) { sP[p * D * 2 + d] = 0 }
                     }
-                    re[k] = ar; im[k] = ai
                 }
-                // spectre hermitien complet puis transformée inverse non normalisée
-                for k in F..<N { re[k] = re[N - k]; im[k] = -im[N - k] }
-                vDSP_DFT_Execute(setupI, re, im, &oRe, &oIm)
-                vDSP_vmul(oRe, 1, win, 1, &fr, 1, vDSP_Length(N))
-                for i in 0..<(N - H) { fr[i] += outMem[i] }
-                for i in 0..<(N - H) { outMem[i] = fr[H + i] }
-                fr.withUnsafeBufferPointer { emit($0.baseAddress!, H) }
+                func fill(_ a: MLMultiArray, _ v: [Float]) { let p = a.dataPointer.assumingMemoryBound(to: Float.self); for i in 0..<v.count { p[i] = v[i] } }
+                fill(inH1, hEnc); fill(inH2, hErb); fill(inH3, hDf)
+                let feats = try? MLDictionaryFeatureProvider(dictionary: ["feat_erb": inErb, "feat_spec": inSpec, "h_enc": inH1, "h_erb": inH2, "h_df": inH3])
+                guard let feats, let pred = try? model.prediction(from: feats),
+                      let mask = pred.featureValue(for: "mask")?.multiArrayValue, let coefs = pred.featureValue(for: "coefs")?.multiArrayValue,
+                      let nE = pred.featureValue(for: "n_enc")?.multiArrayValue, let nR = pred.featureValue(for: "n_erb")?.multiArrayValue, let nD = pred.featureValue(for: "n_df")?.multiArrayValue else { failed = true; return }
+                hEnc = Self.contiguous(nE, 256); hErb = Self.contiguous(nR, 512); hDf = Self.contiguous(nD, 512)
+                let mS = mask.strides.map { $0.intValue }, cS = coefs.strides.map { $0.intValue }          // [1,1,T,32], [1,5,T,96,2]
+                let mP = mask.dataPointer.assumingMemoryBound(to: Float.self), cP = coefs.dataPointer.assumingMemoryBound(to: Float.self)
+
+                let last = min(o + nB, nt)
+                for t in o..<last {
+                    let p = K + (t - o)
+                    // masque ERB → bins (au-dessus de D) ; filtrage profond en dessous
+                    for b in 0..<E {
+                        let m = mP[p * mS[2] + b * mS[3]]
+                        for k in erbEdges[b]..<erbEdges[b + 1] { maskBin[k] = m }
+                    }
+                    let r = t - base
+                    for k in 0..<F { re[k] = specRe[r * F + k] * maskBin[k]; im[k] = specIm[r * F + k] * maskBin[k] }
+                    for k in 0..<D {
+                        var ar: Float = 0, ai: Float = 0
+                        for n in 0..<Self.order {
+                            let ti = t - 2 + n
+                            guard ti >= 0 && ti < nt else { continue }
+                            let rr = ti - base
+                            let sr = specRe[rr * F + k], si = specIm[rr * F + k]
+                            let cr = cP[n * cS[1] + p * cS[2] + k * cS[3]], ci = cP[n * cS[1] + p * cS[2] + k * cS[3] + cS[4]]
+                            ar += sr * cr - si * ci; ai += sr * ci + si * cr
+                        }
+                        re[k] = ar; im[k] = ai
+                    }
+                    // spectre hermitien complet puis transformée inverse non normalisée
+                    for k in F..<N { re[k] = re[N - k]; im[k] = -im[N - k] }
+                    vDSP_DFT_Execute(setupI, re, im, &oRe, &oIm)
+                    vDSP_vmul(oRe, 1, win, 1, &fr, 1, vDSP_Length(N))
+                    for i in 0..<(N - H) { fr[i] += outMem[i] }
+                    for i in 0..<(N - H) { outMem[i] = fr[H + i] }
+                    fr.withUnsafeBufferPointer { emit($0.baseAddress!, H) }
+                }
+                if wbuf.frameLength > 0 { do { try out.write(from: wbuf) } catch { failed = true; return }; wbuf.frameLength = 0 }
+                o = last
+                // on oublie les images dont on n'a plus besoin (contexte K + filtrage profond 2)
+                let keepFrom = max(o - K - 2, 0)
+                if keepFrom > base {
+                    let drop = keepFrom - base
+                    specRe.removeFirst(drop * F); specIm.removeFirst(drop * F); fErb.removeFirst(drop * E); fSpec.removeFirst(drop * D * 2); base = keepFrom
+                }
+                progress(min(Double(o) / Double(nt), 1))
             }
-            if wbuf.frameLength > 0 { do { try out.write(from: wbuf) } catch { return false }; wbuf.frameLength = 0 }
-            o = last
-            // on oublie les images dont on n'a plus besoin (contexte K + filtrage profond 2)
-            let keepFrom = max(o - K - 2, 0)
-            if keepFrom > base {
-                let drop = keepFrom - base
-                specRe.removeFirst(drop * F); specIm.removeFirst(drop * F); fErb.removeFirst(drop * E); fSpec.removeFirst(drop * D * 2); base = keepFrom
-            }
-            progress(min(Double(o) / Double(nt), 1))
+            if failed { return false }
         }
         return true
     }
 
     private static func contiguous(_ a: MLMultiArray, _ count: Int) -> [Float] {
-        // les états sont de petites matrices [couches, 1, 256] : lecture par indice logique (indépendante des pas mémoire)
-        (0..<count).map { a[$0].floatValue }
+        // états [couches, 1, 256] lus avec leurs pas mémoire (pas d'objet NSNumber par valeur)
+        let st = a.strides.map { $0.intValue }, p = a.dataPointer.assumingMemoryBound(to: Float.self)
+        let layers = count / 256
+        var out = [Float](repeating: 0, count: count)
+        for l in 0..<layers { for k in 0..<256 { out[l * 256 + k] = p[l * st[0] + k * st[2]] } }
+        return out
     }
 }

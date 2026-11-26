@@ -503,7 +503,7 @@ struct ExportOptionsSheet: View {
     @ObservedObject var doc: Doc
     let request: ExportRequest
     var maxHeight: CGFloat = 10_000                     // hauteur disponible dans la fenêtre : au-delà, les questions défilent (titre et boutons restent visibles)
-    @State private var more = false
+    @State private var more = UserDefaults.standard.bool(forKey: "capture.more")          // ouvert d'office pour les captures (--more)
     @State private var bodyHeight: CGFloat = 0
 
     private var people: FindModel? { if case .people(let f) = request.kind { return f }; return nil }
@@ -704,9 +704,12 @@ struct ExportOptionsSheet: View {
         let base = Planner.sanitize(doc.baseName.isEmpty ? doc.info.url.deletingPathExtension().lastPathComponent : doc.baseName)
         let ext = eff.resolvedFormat(for: doc.info).ext(source: doc.info.ext)
         let groups = f.exportGroups(each: f.protoOut == .each).filter { !$0.segments.isEmpty }
-        return VStack(spacing: 4) {
+        return VStack(alignment: .leading, spacing: 8) {
             ForEach(groups, id: \.name) { g in
-                nameField(placeholder: "\(base) – \(g.name)", text: Binding(get: { f.protoNames[g.name] ?? "" }, set: { f.protoNames[g.name] = $0 }), ext: ext)
+                VStack(alignment: .leading, spacing: 3) {          // la personne en étiquette : un nom de fichier long la cacherait dans le champ
+                    Text(g.name).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+                    nameField(placeholder: "\(base) – \(g.name)", text: Binding(get: { f.protoNames[g.name] ?? "" }, set: { f.protoNames[g.name] = $0 }), ext: ext)
+                }
             }
         }
     }
