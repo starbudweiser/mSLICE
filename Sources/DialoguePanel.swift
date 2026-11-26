@@ -443,7 +443,7 @@ private struct DialogueSent: View {
                 let who = (r?.perCharacter ?? []).map { "\($0.name) \($0.count)" }.joined(separator: ", ")
                 Text(L.t("dlg.sent.body", head + (who.isEmpty ? "." : " — " + who + "."))).font(.system(size: 11.5)).foregroundStyle(Theme.text2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity)
-            HStack(spacing: 8) {
+            VStack(spacing: 8) {
                 Button { dialogues.openCasting() } label: { Text(L.t("dlg.sent.open")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(kind: .primary))
                 Button { dialogues.finishSend() } label: { Text(L.t("dlg.sent.done")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton())
             }

@@ -98,7 +98,7 @@ struct FlatButton: ButtonStyle {
     var height: CGFloat = Theme.controlHeight
     func makeBody(configuration c: Configuration) -> some View {
         c.label
-            .font(.system(size: 12.5, weight: kind == .normal ? .medium : .semibold))
+            .font(.system(size: 12.5, weight: kind == .normal ? .medium : .semibold)).lineLimit(1).minimumScaleFactor(0.8)
             .padding(.horizontal, 12).frame(height: height)
             .foregroundStyle(fg).background(bg, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
             .opacity(c.isPressed ? 0.8 : 1)
