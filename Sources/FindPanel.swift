@@ -760,15 +760,17 @@ extension PeopleBar {
             HStack(spacing: 8) {
                 Button { model.opts.trimSilence.toggle(); if model.opts.trimSilence { Task { await doc.ensureSilences() } } } label: { Chip(text: L.t("sil.trim"), on: on) }.buttonStyle(.plain)
                 if on {
-                    Text(gain.map { L.t("sil.gain", Fmt.time(max($0, 0), decimals: true), Fmt.breath(model.opts.trimIntensity)) } ?? L.t("exp.silence.busy"))
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+                    if let gain { Text(L.t("sil.gain", Fmt.time(max(gain, 0), decimals: true)))
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail) }
                 } else {
                     Text(L.t("sil.hint")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
             }
             if on { IntensitySlider(model: model) }
+            if on, doc.loudness == nil { SilenceProgress(doc: doc) }
         }
+        .task(id: "\(ObjectIdentifier(doc).hashValue)-\(on)") { if on { await doc.ensureSilences() } }       // l'interrupteur reste actif d'une vidéo à l'autre : la mesure repart pour chaque fichier
     }
 }
 

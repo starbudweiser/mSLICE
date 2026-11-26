@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var silent: Bool { args.contains("--silent") || arg("--capture") != nil || arg("--selftest-ui") != nil || arg("--capture-about") != nil || arg("--capture-settings") != nil }
 
     func applicationWillFinishLaunching(_ n: Notification) {
+        if let v = arg("--trim-demo").flatMap(Double.init) { Doc.demoProgress = v }          // capture : recherche des blancs figée à v (barre de progression)
         AppDelegate.shared = self
         (Appearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .dark).apply()
     }
@@ -309,6 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   ChatMessage(role: .note, text: "Dossier refusé : l'agent n'écrit que dans le dossier du fichier source.", failed: true)]
                 }
             }
+            if self.arg("--trim") != nil { model.opts.trimSilence = true; if let v = self.arg("--trim").flatMap(Double.init), v >= 0, v <= 1 { model.opts.trimIntensity = v } }       // « blancs retirés » actif d'office (--trim 0…1 : intensité)
             if self.arg("--more") != nil { UserDefaults.standard.set(true, forKey: "capture.more"); let prev = self.restoreAfterCapture; self.restoreAfterCapture = { prev?(); UserDefaults.standard.removeObject(forKey: "capture.more") } }
             if self.arg("--state") == "options" { model.requestPiecesExport() }
             if self.arg("--state") == "export", let d = model.current { let r = ExportRun(); r.items = d.segments.map { ExportRun.Item(name: $0.id.uuidString.prefix(8) + ".mp4", duration: $0.duration, fraction: 0.5, state: .running) }; model.run = r; model.sheet = .export }

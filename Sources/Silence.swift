@@ -104,7 +104,7 @@ struct LoudnessProfile: Sendable {
     }
 
     /// Décode la première piste audio en mono 8 kHz et mesure le niveau toutes les 25 ms (ffmpeg, en flux : pas de fichier temporaire).
-    static func measure(_ info: MediaInfo) async -> LoudnessProfile? {
+    static func measure(_ info: MediaInfo, progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> LoudnessProfile? {
         guard let ffmpeg = Tools.ffmpeg, info.audio != nil else { return nil }
         return await Task.detached(priority: .utility) { () -> LoudnessProfile? in
             let p = Process(); p.executableURL = ffmpeg
@@ -113,11 +113,15 @@ struct LoudnessProfile: Sendable {
             do { try p.run() } catch { return nil }
             let win = 200                                                     // 25 ms à 8 kHz
             var frames: [Float] = [], acc: Double = 0, n = 0, carry = Data()
+            let expected = max(info.duration * 8000 * 4, 1), step = expected / 100          // octets attendus : sert à la barre de progression
+            var read = 0.0, nextReport = step
             let h = out.fileHandleForReading
             while true {
                 let chunk = h.readData(ofLength: 1 << 16)
                 if chunk.isEmpty { break }
                 carry.append(chunk)
+                read += Double(chunk.count)
+                if read >= nextReport { progress(min(read / expected, 1)); nextReport = read + step }
                 let usable = carry.count / 4 * 4
                 carry.withUnsafeBytes { raw in
                     let f = raw.bindMemory(to: Float.self)

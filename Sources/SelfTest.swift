@@ -689,6 +689,14 @@ enum UITest {
             t.merge = false; t.trimSilence = false; t.passthrough = true; t.format = .same; model.opts = t
         }
 
+        // mesure des blancs : deux demandes en même temps attendent la même mesure (jamais de blocage ni de boucle) et la progression finit à 100 %
+        if d.info.audio != nil {
+            let d2 = Doc(info: d.info)
+            async let a: Void = d2.ensureSilences(); async let b: Void = d2.ensureSilences()
+            _ = await (a, b)
+            check(d2.loudness != nil && !d2.silenceBusy && d2.silences != nil, "blancs : deux demandes simultanées, une seule mesure terminée (progression \(Int(d2.silenceProgress * 100)) %)")
+        }
+
         // bouton « Retirer les blancs » (carte des morceaux) : resserre les morceaux, ⌘Z les rétablit
         if d.info.audio != nil, !d.segments.isEmpty {
             let before = d.segments.map { "\($0.start)-\($0.end)" }, dur0 = d.segments.reduce(0) { $0 + $1.duration }

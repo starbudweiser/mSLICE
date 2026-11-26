@@ -44,6 +44,25 @@ struct FlatSlider: View {
     }
 }
 
+/// Barre de progression de la recherche des blancs : elle pulse tant que la mesure court (immobile si l'utilisateur a réduit les animations).
+struct SilenceProgress: View {
+    @ObservedObject var doc: Doc
+    @State private var pulse = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.ctl)
+                    RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous).fill(Theme.accent).frame(width: max(g.size.width * doc.silenceProgress, 8))
+                        .opacity(pulse ? 1 : 0.45)
+                }
+            }.frame(height: 5)
+            Text(L.t("sil.searching", Int((doc.silenceProgress * 100).rounded()))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2)
+        }
+        .onAppear { if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true } } else { pulse = true } }
+    }
+}
+
 /// Curseur « Intensité » des blancs retirés : de Doux (silences longs seulement, respiration large) à Serré (toutes les pauses, respiration courte). Mémorisé.
 struct IntensitySlider: View {
     @ObservedObject var model: AppModel
@@ -449,6 +468,7 @@ struct PiecesCard: View {
     private var trimBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             IntensitySlider(model: model)
+            if doc.loudness == nil { SilenceProgress(doc: doc) }
             if doc.silences != nil {
                 let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.tighten(doc.segments, inside: true).reduce(0) { $0 + $1.duration }
                 Text(L.t("sil.est", Fmt.time(max(gain, 0), decimals: true)) + " · " + Fmt.breath(model.opts.trimIntensity) + " s").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
@@ -463,7 +483,7 @@ struct PiecesCard: View {
             Task {
                 if let g = await doc.trimPiecesSilence() { model.flash(g > 0.05 ? L.t("sil.done", Fmt.time(g, decimals: true)) : L.t("sil.none")) }
             }
-        } label: { Text(doc.silenceBusy ? L.t("exp.silence.busy") : L.t("sil.trim")).frame(maxWidth: .infinity) }
+        } label: { Text(L.t("sil.trim")).frame(maxWidth: .infinity) }
             .buttonStyle(FlatButton(height: 32)).disabled(doc.silenceBusy)
     }
     private var effectiveOpts: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
@@ -669,8 +689,9 @@ struct ExportOptionsSheet: View {
                 }))
             if model.opts.trimSilence {
                 IntensitySlider(model: model)
+                if doc.loudness == nil { SilenceProgress(doc: doc) }
                 let note: String = {
-                    guard let sil = doc.silences else { return L.t("exp.silence.busy") }
+                    guard let sil = doc.silences else { return "" }
                     if let f = people {
                         let segs = f.protoUnion.map { Segment(start: $0.start, end: $0.end) }
                         _ = sil; let gain = segs.reduce(0) { $0 + $1.duration } - doc.tighten(segs, inside: true).reduce(0) { $0 + $1.duration }
@@ -679,9 +700,10 @@ struct ExportOptionsSheet: View {
                     let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.exportSegments(eff).reduce(0) { $0 + $1.duration }
                     return L.t(model.opts.merge ? "exp.silence.result.merge" : "exp.silence.result.edges", Fmt.time(max(gain, 0), decimals: true), Fmt.breath(model.opts.trimIntensity))
                 }()
-                Text(note + (doc.info.isAudioOnly ? "" : " " + L.t("exp.silence.recode"))).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
+                if !note.isEmpty { Text(note + (doc.info.isAudioOnly ? "" : " " + L.t("exp.silence.recode"))).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true) }
             }
         }
+        .task(id: model.opts.trimSilence) { if model.opts.trimSilence { await doc.ensureSilences() } }          // l'option déjà active à l'ouverture de la feuille : la mesure part toute seule
     }
 
     // Dossier

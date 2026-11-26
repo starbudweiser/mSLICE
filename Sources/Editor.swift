@@ -17,6 +17,8 @@ final class Doc: ObservableObject, Identifiable {
     @Published var exported = false
     @Published var loudness: LoudnessProfile?                     // niveau sonore du fichier, mesuré à la demande pour « blancs retirés » (une seule fois)
     @Published var silenceBusy = false
+    @Published var silenceProgress = 0.0                          // 0…1 pendant la mesure du niveau sonore
+    private var silenceTask: Task<Void, Never>?
     private var silenceCache: (intensity: Double, ranges: [(start: Double, end: Double)])?
     /// Silences pour l'intensité choisie (nil tant que le niveau sonore n'est pas mesuré) : recalculés à la volée quand le curseur bouge.
     var silences: [(start: Double, end: Double)]? {
@@ -152,11 +154,22 @@ final class Doc: ObservableObject, Identifiable {
     func color(of s: Segment) -> Color { Color(nsColor: colorNS(of: s)) }
 
     /// Calcule les silences une fois (une seule recherche à la fois).
+    /// Capture (--trim-demo v) : la recherche des blancs reste figée à v (0…1) pour contrôler la barre de progression.
+    nonisolated(unsafe) static var demoProgress: Double?
+
     func ensureSilences() async {
-        if loudness != nil || silenceBusy || info.audio == nil { return }
-        silenceBusy = true
-        let l = await LoudnessProfile.measure(info)
-        loudness = l ?? LoudnessProfile(frameDB: [], duration: info.duration); silenceBusy = false
+        if loudness != nil || info.audio == nil { return }
+        if let v = Doc.demoProgress { silenceBusy = true; silenceProgress = v; return }
+        if let t = silenceTask { await t.value; return }                     // une mesure est en cours : on l'attend (jamais deux, jamais de boucle)
+        silenceBusy = true; silenceProgress = 0
+        let t = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let l = await LoudnessProfile.measure(self.info) { p in Task { @MainActor [weak self] in self?.silenceProgress = p } }
+            self.loudness = l ?? LoudnessProfile(frameDB: [], duration: self.info.duration)
+            self.silenceProgress = 1; self.silenceBusy = false; self.silenceTask = nil
+        }
+        silenceTask = t
+        await t.value
     }
     /// Morceaux à exporter : ceux de la timeline, resserrés sur la parole si « blancs retirés » est choisi et les silences connus.
     func exportSegments(_ o: ExportOptions) -> [Segment] {
