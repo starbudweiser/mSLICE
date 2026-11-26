@@ -732,6 +732,7 @@ private struct PeopleBar: View {
                 Spacer(minLength: 6)
                 Text(Fmt.time(total, decimals: false)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize()
             }
+            if find.doc.info.audio != nil { silenceRow(union: union) }
             HStack(spacing: 8) {
                 Button { find.addProtosToPieces() } label: { Text(L.t("people.add")).frame(maxWidth: .infinity) }
                     .buttonStyle(FlatButton(height: 40)).opacity(nPieces == 0 ? 0.4 : 1).disabled(nPieces == 0)
@@ -741,6 +742,29 @@ private struct PeopleBar: View {
                 })) } label: { Text(L.t("people.export")).frame(maxWidth: .infinity) }
                     .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(nFiles == 0 ? 0.4 : 1).disabled(nFiles == 0)
             }
+        }
+    }
+}
+
+extension PeopleBar {
+    /// « Retirer les blancs » : un interrupteur visible, qui agit sur « Ajouter aux morceaux » comme sur « Exporter ». La durée gagnée s'affiche dès que les silences sont connus.
+    fileprivate func silenceRow(union: [(start: Double, end: Double)]) -> some View {
+        let on = model.opts.trimSilence
+        let doc = find.doc
+        var gain: Double?
+        if on, let sil = doc.silences {
+            let segs = union.map { Segment(start: $0.start, end: $0.end) }
+            gain = segs.reduce(0) { $0 + $1.duration } - Silence.tighten(segs, silences: sil, inside: true).reduce(0) { $0 + $1.duration }
+        }
+        return HStack(spacing: 8) {
+            Button { model.opts.trimSilence.toggle(); if model.opts.trimSilence { Task { await doc.ensureSilences() } } } label: { Chip(text: L.t("sil.trim"), on: on) }.buttonStyle(.plain)
+            if on {
+                Text(gain.map { L.t("sil.gain", Fmt.time(max($0, 0), decimals: true)) } ?? L.t("exp.silence.busy"))
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+            } else {
+                Text(L.t("sil.hint")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
         }
     }
 }

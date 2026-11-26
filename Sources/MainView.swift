@@ -423,6 +423,7 @@ struct PiecesCard: View {
             ForEach(Array(doc.segments.enumerated()), id: \.element.id) { i, s in
                 PieceRow(doc: doc, index: i, segment: s, name: previewName(outs, i), player: model.player)
             }
+            if !doc.segments.isEmpty, doc.info.audio != nil { trimButton }
             if let first = shifts.first {
                 InfoBox {
                     (Text(L.t("pieces.shift2", first.0, Fmt.time(first.2)) + " ") + Text(L.t("pieces.shift2.cta")).fontWeight(.bold) + Text(" " + L.t("pieces.shift2.tail")))
@@ -430,6 +431,15 @@ struct PiecesCard: View {
                 }
             }
         }
+    }
+    /// « Retirer les blancs » : resserre tout de suite les morceaux sur la parole (0,2 s de respiration gardée) ; ⌘Z rétablit.
+    private var trimButton: some View {
+        Button {
+            Task {
+                if let g = await doc.trimPiecesSilence() { model.flash(g > 0.05 ? L.t("sil.done", Fmt.time(g, decimals: true)) : L.t("sil.none")) }
+            }
+        } label: { Text(doc.silenceBusy ? L.t("exp.silence.busy") : L.t("sil.trim")).frame(maxWidth: .infinity) }
+            .buttonStyle(FlatButton(height: 32)).disabled(doc.silenceBusy)
     }
     private var effectiveOpts: ExportOptions { var o = model.opts; if !o.passthrough, o.format == .same { o.format = doc.info.isAudioOnly ? .m4a : .mp4 }; return o }
     private func previewName(_ outs: [OutputItem], _ i: Int) -> String {
@@ -519,7 +529,7 @@ struct ExportOptionsSheet: View {
                     question(L.t("exp.q.files")) { filesChoice }
                     question(L.t("exp.q.format")) { formatMenu; Text(L.t(model.opts.passthrough ? "exp.format.copy.note" : "exp.format.re.note")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading) }
                     if doc.canClean { question(L.t("exp.q.sound")) { soundChoice } }
-                    if people == nil, doc.info.audio != nil { question(L.t("exp.q.silence")) { silenceChoice } }
+                    if doc.info.audio != nil { question(L.t("exp.q.silence")) { silenceChoice } }
                     question(L.t("exp.q.folder")) { folderRow }
                     Button { withAnimation(.easeOut(duration: 0.15)) { more.toggle() } } label: {
                         HStack { Text(L.t("exp.more")).font(.system(size: 11.5)).foregroundStyle(Theme.text2); Spacer(); Image(systemName: more ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.text2) }
@@ -634,7 +644,12 @@ struct ExportOptionsSheet: View {
                 }))
             if model.opts.trimSilence {
                 let note: String = {
-                    guard let _ = doc.silences else { return L.t("exp.silence.busy") }
+                    guard let sil = doc.silences else { return L.t("exp.silence.busy") }
+                    if let f = people {
+                        let segs = f.protoUnion.map { Segment(start: $0.start, end: $0.end) }
+                        let gain = segs.reduce(0) { $0 + $1.duration } - Silence.tighten(segs, silences: sil, inside: true).reduce(0) { $0 + $1.duration }
+                        return L.t("exp.silence.result.merge", Fmt.time(max(gain, 0), decimals: true))
+                    }
                     let gain = doc.segments.reduce(0) { $0 + $1.duration } - doc.exportSegments(eff).reduce(0) { $0 + $1.duration }
                     return L.t(model.opts.merge ? "exp.silence.result.merge" : "exp.silence.result.edges", Fmt.time(max(gain, 0), decimals: true))
                 }()

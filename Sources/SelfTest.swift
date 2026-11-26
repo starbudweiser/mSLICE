@@ -689,6 +689,16 @@ enum UITest {
             t.merge = false; t.trimSilence = false; t.passthrough = true; t.format = .same; model.opts = t
         }
 
+        // bouton « Retirer les blancs » (carte des morceaux) : resserre les morceaux, ⌘Z les rétablit
+        if d.info.audio != nil, !d.segments.isEmpty {
+            let before = d.segments.map { "\($0.start)-\($0.end)" }, dur0 = d.segments.reduce(0) { $0 + $1.duration }
+            let gain = await d.trimPiecesSilence()
+            let dur1 = d.segments.reduce(0) { $0 + $1.duration }
+            check(gain != nil && abs((dur0 - dur1) - (gain ?? -1)) < 0.001 && !d.segments.isEmpty, "retirer les blancs : \(String(format: "%.1f", gain ?? -1)) s gagnées (\(String(format: "%.1f", dur0)) → \(String(format: "%.1f", dur1)) s)")
+            if (gain ?? 0) > 0.05 { d.undo() }
+            check(d.segments.map { "\($0.start)-\($0.end)" } == before, "retirer les blancs : ⌘Z rétablit les morceaux")
+        }
+
         // schéma mslice:// (envoyé par l'extension Finder) : ouvre le fichier sans doublon ; trim ouvre l'élagage en lot
         let enc = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+"))) ?? path
         let docsBefore = model.docs.count

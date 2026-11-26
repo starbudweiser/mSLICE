@@ -414,15 +414,25 @@ final class FindModel: ObservableObject {
     func addProtosToPieces() {
         let list = protoUnion
         guard !list.isEmpty else { return }
-        doc.snapshot()
         let pieces = protoPieces
-        for s in list {                                                                      // le protagoniste qui occupe le plus de ce moment donne sa couleur
-            let who = pieces.max { overlap($0.segments, s) < overlap($1.segments, s) }?.id
-            doc.addSegment(s.start, s.end, who: who)
-        }
-        added = AddedInfo(count: list.count, seconds: list.reduce(0) { $0 + ($1.end - $1.start) })
+        var items = list.map { s in Segment(start: s.start, end: s.end, who: pieces.max { overlap($0.segments, s) < overlap($1.segments, s) }?.id) }   // le protagoniste qui occupe le plus du moment donne sa couleur
+        if AppModel.shared.opts.trimSilence, doc.info.audio != nil {                              // « blancs retirés » : on pose directement les morceaux resserrés
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.doc.ensureSilences()
+                items = Silence.tighten(items, silences: self.doc.silences ?? [], inside: true)
+                self.commitPieces(items)
+            }
+        } else { commitPieces(items) }
+    }
+
+    private func commitPieces(_ items: [Segment]) {
+        guard !items.isEmpty else { return }
+        doc.snapshot()
+        for s in items { doc.addSegment(s.start, s.end, who: s.who) }
+        added = AddedInfo(count: items.count, seconds: items.reduce(0) { $0 + $1.duration })
         protoSel = []
-        if let f = list.first { doc.ensureVisible(f.start) }
+        if let f = items.first { doc.ensureVisible(f.start) }
     }
 
     private func overlap(_ list: [(start: Double, end: Double)], _ s: (start: Double, end: Double)) -> Double {

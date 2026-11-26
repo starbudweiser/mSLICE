@@ -150,6 +150,19 @@ final class Doc: ObservableObject, Identifiable {
         return Silence.tighten(segments, silences: sil, inside: o.merge)
     }
 
+    /// Retire les blancs des morceaux posés (début, fin et intérieur), annulable avec ⌘Z. Renvoie la durée gagnée ; nil s'il n'y a rien à faire (pas de son, pas de morceau).
+    func trimPiecesSilence() async -> Double? {
+        guard info.audio != nil, !segments.isEmpty else { return nil }
+        await ensureSilences()
+        guard let sil = silences else { return nil }
+        let before = segments.reduce(0) { $0 + $1.duration }
+        let t = Silence.tighten(segments, silences: sil, inside: true)
+        let gain = before - t.reduce(0) { $0 + $1.duration }
+        guard !t.isEmpty, gain > 0.05 else { return 0 }
+        snapshot(); segments = t; selected = t.first?.id
+        return gain
+    }
+
     func deleteSelected() {
         guard let sel = selected, let i = segments.firstIndex(where: { $0.id == sel }) else { return }
         snapshot(); segments.remove(at: i)
@@ -324,6 +337,12 @@ final class AppModel: ObservableObject {
     /// Exporte directement des groupes de moments choisis dans l'onglet Trouver (un fichier par groupe, chacun fusionné), sans toucher aux morceaux du fichier.
     func exportGroups(_ groups: [(name: String, segments: [(start: Double, end: Double)])], voice: Bool = false, names: [String: String] = [:]) {
         guard let d = current, sheet == .none, groups.contains(where: { !$0.segments.isEmpty }), var o = exportOptions(for: d, voice: voice) else { return }
+        var groups = groups
+        if o.trimSilence, d.info.audio != nil {                                          // « blancs retirés » : chaque groupe resserré sur la parole
+            guard let sil = d.silences else { flash(L.t("exp.silence.busy")); Task { await d.ensureSilences(); self.exportGroups(groups, voice: voice, names: names) }; return }
+            groups = groups.map { g in (g.name, Silence.tighten(g.segments.map { Segment(start: $0.start, end: $0.end) }, silences: sil, inside: true).map { (start: $0.start, end: $0.end) }) }
+            if !d.info.isAudioOnly { o.passthrough = false }
+        }
         o.merge = true
         if o.passthrough, !Planner.canCopy(info: d.info, to: o.format), !o.voiceOnly { flash(L.t("err.cantcopy")); return }
         if o.passthrough, !d.info.isAudioOnly, o.resolvedFormat(for: d.info).isAudio, d.info.audio == nil { flash(L.t("err.noaudio")); return }
