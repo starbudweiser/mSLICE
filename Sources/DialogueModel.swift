@@ -214,7 +214,7 @@ final class DialogueModel: ObservableObject {
         doc.snapshot()
         for s in spans where s.end > s.start { doc.addSegment(s.start, s.end) }
         if let f = spans.first { doc.ensureVisible(f.start) }
-        AppModel.shared.flash(L.t(lines.count == 1 ? "dlg.pieces.added1" : "dlg.pieces.added", lines.count))
+        AppModel.shared.flash(L.n("dlg.pieces.added", lines.count))
     }
 
     /// Un WAV par réplique choisie et un SRT, dans un dossier à côté de la vidéo (voix seule si l'option est cochée dans l'écran d'envoi).
@@ -228,7 +228,7 @@ final class DialogueModel: ObservableObject {
             do {
                 let folder = try await DialogueExport.write(info, lines: cl, isolate: isolate, job: job) { p in Task { @MainActor [weak self] in self?.exportProgress = p } }
                 self?.exporting = false
-                AppModel.shared.flash(L.t("dlg.export.done", lines.count, folder.lastPathComponent))
+                AppModel.shared.flash(L.n("dlg.export.done", lines.count, folder.lastPathComponent))
                 if !AppModel.isSelfTest { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
             } catch {
                 self?.exporting = false

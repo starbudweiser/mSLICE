@@ -115,7 +115,7 @@ final class AgentChat: ObservableObject {
         let m = AppModel.shared
         var ctx = ""
         if let d = m.current {
-            ctx = "\nCurrent state: the file open in the window is \"\(d.url.path)\" (\(Fmt.time(d.duration)), \(d.info.summary)); playhead at \(Fmt.time(m.player.time)); \(d.segments.count) piece(s) marked."
+            ctx = "\nCurrent state: the file open in the window is \"\(d.url.path)\" (\(Fmt.time(d.duration)), \(d.info.summary)); playhead at \(Fmt.time(m.player.time)); \(d.segments.count) \(d.segments.count == 1 ? "piece" : "pieces") marked."
             if m.docs.count > 1 { ctx += " Other open files: " + m.docs.filter { $0 !== d }.map { "\"\($0.url.path)\"" }.joined(separator: ", ") + "." }
         } else { ctx = "\nNo file is open in the window." }
         let lang = ["fr": "French", "en": "English", "es": "Spanish", "it": "Italian"][L.lang == .fr ? "fr" : L.lang == .es ? "es" : L.lang == .it ? "it" : "en"] ?? "English"

@@ -126,7 +126,7 @@ struct TitleBar: View {
                     HStack(spacing: 0) {
                         Text(d.name).fontWeight(.semibold).foregroundStyle(Theme.text)
                         Text(" · " + d.info.summary).foregroundStyle(Theme.text2)
-                    }.font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                    }.font(.system(size: 12)).lineLimit(1).truncationMode(.middle).help(d.name)
                 }
             }
             Spacer(minLength: 12)
@@ -149,7 +149,7 @@ struct Sidebar: View {
     @ObservedObject var model: AppModel
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(L.t("files.title", model.docs.count)).padding(.horizontal, 4).padding(.bottom, 4)
+            SectionTitle(L.t("files.title", model.docs.count)).numberTicker(model.docs.count).padding(.horizontal, 4).padding(.bottom, 4)
             if model.docs.isEmpty { Text(L.t("files.none")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).padding(4) }
             ScrollView { VStack(spacing: 4) { ForEach(model.docs) { d in FileRow(model: model, doc: d, selected: model.current === d) } } }
             Spacer(minLength: 0)
@@ -175,14 +175,14 @@ struct FileRow: View {
             Text(doc.info.ext.uppercased()).font(.system(size: 9.5, weight: .bold)).foregroundStyle(Theme.text)
                 .frame(width: 34, height: 34).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(doc.name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1).truncationMode(.middle)
-                Text("\(Fmt.time(doc.duration, decimals: false)) · \(Fmt.size(doc.info.size))").font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1)
+                Text(doc.name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1).truncationMode(.middle).help(doc.name)
+                Text("\(Fmt.time(doc.duration, decimals: false)) · \(Fmt.size(doc.info.size))").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
                 if doc.exported { HStack { Spacer(); Tag(text: L.t("files.extracted"), kind: .ok, symbol: "checkmark") }.padding(.top, 2) }
-                else if !doc.segments.isEmpty { HStack { Spacer(); Tag(text: L.t(doc.segments.count == 1 ? "files.piece" : "files.pieces", doc.segments.count), kind: selected ? .accent : .plain) }.padding(.top, 2) }
+                else if !doc.segments.isEmpty { HStack { Spacer(); Tag(text: L.n("files.pieces", doc.segments.count), kind: selected ? .accent : .plain).numberTicker(doc.segments.count) }.padding(.top, 2) }
             }
         }
         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+        .selectableSurface(selected: selected)
         .contentShape(Rectangle()).onTapGesture { model.select(doc) }
         .contextMenu { Button(L.t("files.close")) { model.close(doc) } }
     }
@@ -230,7 +230,7 @@ struct PlayerCard: View {
         ZStack {
             Theme.media
             if doc.hasVideo { PlayerSurface(player: player.player, overlay: player.scrubber.layer) } else {
-                VStack(spacing: 8) { Image(systemName: "waveform").font(.system(size: 40, weight: .light)); Text(doc.name).font(.system(size: 13)) }.foregroundStyle(.white.opacity(0.7))
+                VStack(spacing: 8) { Image(systemName: "waveform").font(.system(size: 40, weight: .light)); Text(doc.name).font(.system(size: 13)).lineLimit(1).truncationMode(.middle).help(doc.name) }.padding(.horizontal, 24).foregroundStyle(.white.opacity(0.7))
             }
             if let p = player.preparing { Text(p).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 28).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.rChip, style: .continuous)) }
             VStack {
@@ -269,7 +269,7 @@ struct TransportBar: View {
         HStack(spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(Fmt.time(player.time)).font(.system(size: 22, weight: .semibold).monospacedDigit()).lineLimit(1).fixedSize()
-                Text("/ " + Fmt.time(doc.duration)).font(.system(size: 12)).foregroundStyle(Theme.text2).lineLimit(1).fixedSize()
+                Text("/ " + Fmt.time(doc.duration)).font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize()
             }.padding(.trailing, 6).layoutPriority(1)
             roundButton("backward.end.fill") { player.pause(); player.seek(doc.segments.last(where: { $0.start < player.time - 0.05 })?.start ?? 0) }
             roundButton("backward.fill") { player.pause(); player.seek(player.time - 1) }
@@ -403,14 +403,14 @@ struct ExportBar: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if n == 0 { Text(L.t("bar.nothing")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
                 else {
-                    (Text(n == 1 ? L.t("export.files.one") : L.t("export.files", n)).fontWeight(.semibold).foregroundColor(Theme.text) + Text(" · " + settingsText(o)).foregroundColor(Theme.text2))
+                    (Text(L.n("export.files", n)).fontWeight(.semibold).foregroundColor(Theme.text) + Text(" · " + settingsText(o)).foregroundColor(Theme.text2))
                         .font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
                 }
                 if n > 0 { Text("≈ " + Fmt.size(est.bytes)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize() }
                 Spacer(minLength: 0)
             }
             HStack(spacing: 8) {
-                Button { model.exportNow() } label: { Text(doc.segments.count == 1 ? L.t("exp.bar.one") : L.t("exp.bar.n", doc.segments.count)).frame(maxWidth: .infinity) }
+                Button { model.exportNow() } label: { Text(L.n("exp.bar", doc.segments.count)).numberTicker(doc.segments.count).frame(maxWidth: .infinity) }
                     .buttonStyle(FlatButton(kind: .sand, height: 40)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0)
                 Button { model.requestPiecesExport() } label: { SlidersGlyph().stroke(Theme.warn, style: StrokeStyle(lineWidth: 1.6, lineCap: .round)).frame(width: 15, height: 15).frame(width: 16) }
                     .buttonStyle(FlatButton(height: 40)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0).help(L.t("exp.settings"))
@@ -442,9 +442,9 @@ struct PiecesCard: View {
         let shifts = Planner.shifts(info: doc.info, segments: doc.segments, opts: effectiveOpts, keyframes: doc.keyframes)
         Card {
             HStack(alignment: .firstTextBaseline) {
-                SectionTitle(L.t("pieces.title", doc.segments.count))
+                SectionTitle(L.t("pieces.title", doc.segments.count)).numberTicker(doc.segments.count)
                 Spacer()
-                if !doc.segments.isEmpty { Text(L.t("pieces.kept", Fmt.time(doc.kept), Fmt.time(doc.duration))).font(.system(size: 11.5)).foregroundStyle(Theme.text2) }
+                if !doc.segments.isEmpty { Text(L.t("pieces.kept", Fmt.time(doc.kept), Fmt.time(doc.duration))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2) }
             }
             if doc.segments.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -507,7 +507,7 @@ struct PieceRow: View {
         HStack(spacing: 9) {
             Text("\(index + 1)").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 20, height: 20).background(doc.color(of: segment), in: Circle())
             VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle).help(name)
                 Text("\(Fmt.time(segment.start)) → \(Fmt.time(segment.end))").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -515,8 +515,7 @@ struct PieceRow: View {
             Button { doc.delete(segment.id) } label: { Image(systemName: "xmark").font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Theme.text2).frame(width: 14, height: 20) }.buttonStyle(.plain)
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(sel ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(sel ? doc.color(of: segment) : .clear, lineWidth: 1.5))
+        .selectableSurface(selected: sel)
         .contentShape(Rectangle())
         .onTapGesture { doc.selected = segment.id; player.pause(); player.seek(segment.start); doc.ensureVisible(segment.start) }
     }
@@ -536,8 +535,7 @@ struct ChoiceCard: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(on ? Theme.accent : .clear, lineWidth: 1.5))
+            .selectableSurface(selected: on, rest: Theme.ctl)
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -598,10 +596,10 @@ struct ExportOptionsSheet: View {
     }
 
     private var title: String {
-        if let f = people { return L.t(f.protoOut == .each && request.count > 1 ? "exp.title.people" : "exp.title.people1", request.count) }
-        return L.t(doc.segments.count == 1 ? "exp.title.one" : "exp.title.n", doc.segments.count)
+        if let f = people { return f.protoOut == .each && request.count > 1 ? L.n("exp.title.people", request.count) : L.t("exp.title.people.one") }
+        return L.n("exp.title", doc.segments.count)
     }
-    private var goLabel: String { request.count == 1 ? L.t("exp.confirm.one") : L.t("exp.confirm.n", request.count) }
+    private var goLabel: String { L.n("exp.confirm", request.count) }
     private var cleanPercent: Double { if case .building(let p) = doc.clean { return (p * 100).rounded() }; return 0 }
 
     private func question<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
@@ -844,7 +842,7 @@ struct ExportProgressSheet: View {
             VStack(spacing: 10) {
                 ForEach(run.items) { it in
                     VStack(spacing: 5) {
-                        HStack { Text(it.name).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle); Spacer(minLength: 8); Text(status(it)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2) }
+                        HStack { Text(it.name).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle).help(it.name); Spacer(minLength: 8); Text(status(it)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2) }
                         ProgressBar(value: it.fraction)
                     }
                 }
@@ -860,7 +858,7 @@ struct ExportProgressSheet: View {
     }
     private var subtitle: String {
         guard let d = model.current else { return "" }
-        return "\(d.name) → \(L.t("export.files", run.items.count))" + (model.opts.passthrough ? " · " + L.t("export.passthrough") : "") + " · " + (model.opts.folder == nil ? L.t("export.sameFolder") : (model.opts.folder! as NSString).lastPathComponent)
+        return "\(d.name) → \(L.n("export.files", run.items.count))" + (model.opts.passthrough ? " · " + L.t("export.passthrough") : "") + " · " + (model.opts.folder == nil ? L.t("export.sameFolder") : (model.opts.folder! as NSString).lastPathComponent)
     }
     private func status(_ it: ExportRun.Item) -> String {
         switch it.state { case .waiting: L.t("export.waiting"); case .running: "\(Int(it.fraction * 100)) %"; case .done: "✓ " + Fmt.size(it.bytes); case .failed: L.t("export.failed"); case .cancelled: L.t("export.cancelled") }
@@ -879,16 +877,16 @@ struct DoneSheet: View {
     @ObservedObject var run: ExportRun
     var body: some View {
         SheetBox {
-            HStack(spacing: 14) {
+            // Encart de résumé : tout est centré (Socle).
+            VStack(alignment: .center, spacing: 8) {
                 Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(.white).frame(width: 44, height: 44).background(Theme.ok, in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L.t("done.title", run.items.count)).font(.system(size: 16, weight: .bold))
-                    Text(L.t("done.sub", Fmt.size(run.totalBytes), Fmt.dec(run.elapsed))).font(.system(size: 11.5)).foregroundStyle(Theme.text2)
-                }
+                Text(L.n("done.title", run.items.count)).font(.system(size: 16, weight: .bold)).contentTransition(.numericText())
+                Text(L.t("done.sub", Fmt.size(run.totalBytes), Fmt.dec(run.elapsed))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2)
             }
+            .multilineTextAlignment(.center).frame(maxWidth: .infinity)
             VStack(spacing: 6) {
                 ForEach(run.items) { it in
-                    HStack { Text(it.name).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle); Spacer(minLength: 8)
+                    HStack { Text(it.name).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle).help(it.name); Spacer(minLength: 8)
                         Text("\(Fmt.time(it.duration)) · \(Fmt.size(it.bytes))").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2) }
                         .padding(.horizontal, 10).frame(height: 30).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
                 }

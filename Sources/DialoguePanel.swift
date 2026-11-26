@@ -40,7 +40,7 @@ private struct SourceRow: View {
                 if let value { Text(value).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1) }
             }
             .padding(.horizontal, 10).frame(height: 34).contentShape(Rectangle())
-            .background(on ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+            .selectableSurface(selected: on)
         }.buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.5)
     }
 }
@@ -73,7 +73,7 @@ private struct DialogueSource: View {
                         HStack {
                             SectionTitle(L.t("dlg.who.title"))
                             Spacer(minLength: 4)
-                            if dialogues.hasProtagonists { Tag(text: L.t(dialogues.protagonists.count == 1 ? "dlg.who.tag1" : "dlg.who.tag", dialogues.protagonists.count), kind: .ok) }
+                            if dialogues.hasProtagonists { Tag(text: L.n("dlg.who.tag", dialogues.protagonists.count), kind: .ok) }
                         }
                         Text(L.t(dialogues.hasProtagonists ? "dlg.who.note" : "dlg.who.none")).font(.system(size: 11)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
                         if !dialogues.hasProtagonists {
@@ -188,7 +188,7 @@ private struct DialogueList: View {
     private var header: some View {
         Card(padding: 10, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(L.t("dlg.list.title", dialogues.activeCount)).font(.system(size: 13, weight: .semibold))
+                Text(L.t("dlg.list.title", dialogues.activeCount)).font(.system(size: 13, weight: .semibold)).numberTicker(dialogues.activeCount)
                 Spacer(minLength: 4)
                 if let s = dialogues.data { Text(L.t(s.kind == .subtitles ? "dlg.from.subtitles" : "dlg.from.transcript", s.detail)).font(.system(size: 11)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.middle) }
             }
@@ -246,8 +246,8 @@ private struct DialogueList: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(on ? Theme.accent : Theme.line, lineWidth: on ? 1.2 : 0.5))
+        .selectableSurface(selected: on, rest: Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous).strokeBorder(Theme.line, lineWidth: 0.5))
         .contentShape(Rectangle())
         .onTapGesture { if !editing { dialogues.select(l.id) } }                                              // clic simple immédiat (pas d'attente du double-clic)
         .simultaneousGesture(TapGesture(count: 2).onEnded { if !editing { dialogues.select(l.id); begin(l) } })
@@ -303,7 +303,7 @@ private struct DialogueList: View {
                     Text(dialogues.exporting ? "\(Int(dialogues.exportProgress * 100)) %" : L.t("dlg.export")).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
                 }.buttonStyle(FlatButton()).disabled(dialogues.exporting || dialogues.chosen.isEmpty).opacity(dialogues.exporting || dialogues.chosen.isEmpty ? 0.45 : 1)
             }.font(.system(size: 11.5))
-            Button { dialogues.openSend() } label: { Text(L.t("dlg.send", dialogues.activeCount)).frame(maxWidth: .infinity) }
+            Button { dialogues.openSend() } label: { Text(L.n("dlg.send", dialogues.activeCount)).frame(maxWidth: .infinity) }
                 .buttonStyle(CastButton()).disabled(dialogues.activeCount == 0).opacity(dialogues.activeCount == 0 ? 0.45 : 1)
             HStack(spacing: 5) { Key("Espace"); Text(L.t("dlg.keys.listen")).font(.system(size: 10.5)).foregroundStyle(Theme.text2) }
         }
@@ -389,7 +389,7 @@ private struct DialogueSend: View {
                                 Text("\(n.count)").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).frame(minWidth: 18, alignment: .trailing)
                             }
                         }
-                        if dialogues.unknownCount > 0 { Text(L.t("dlg.send.nochar", dialogues.unknownCount)).font(.system(size: 11)).foregroundStyle(Theme.warn) }
+                        if dialogues.unknownCount > 0 { Text(L.n("dlg.send.nochar", dialogues.unknownCount)).font(.system(size: 11)).foregroundStyle(Theme.warn) }
                     }
                     Card(padding: 12, spacing: 4) {
                         SectionTitle(L.t("dlg.send.content"))
@@ -404,7 +404,7 @@ private struct DialogueSend: View {
             }
             VStack(spacing: 6) {
                 let ok = dialogues.castingAvailable && !dialogues.cast.title.trimmingCharacters(in: .whitespaces).isEmpty
-                Button { dialogues.send() } label: { Text(L.t("dlg.send", dialogues.sendable.count)).frame(maxWidth: .infinity) }.buttonStyle(CastButton()).disabled(!ok).opacity(ok ? 1 : 0.45)
+                Button { dialogues.send() } label: { Text(L.n("dlg.send", dialogues.sendable.count)).frame(maxWidth: .infinity) }.buttonStyle(CastButton()).disabled(!ok).opacity(ok ? 1 : 0.45)
                 if !dialogues.castingAvailable { Text(L.t("dlg.send.nocasting")).font(.system(size: 10.5)).foregroundStyle(Theme.warn) }
                 Button { dialogues.closeSend() } label: { Text(L.t("dlg.cancel")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton())
             }
@@ -436,7 +436,7 @@ private struct DialogueSent: View {
         Card(padding: 16, spacing: 10) {
             VStack(spacing: 10) {
                 Image(systemName: "checkmark").font(.system(size: 18, weight: .bold)).foregroundStyle(.white).frame(width: 44, height: 44).background(Theme.ok, in: Circle())
-                Text(L.t((r?.count ?? 0) == 1 ? "dlg.sent.title1" : "dlg.sent.title", r?.count ?? 0)).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+                Text(L.n("dlg.sent.title", r?.count ?? 0)).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
                 let head = dialogues.cast.title + (dialogues.cast.episode.isEmpty ? "" : " · " + dialogues.cast.episode)
                 let who = (r?.perCharacter ?? []).map { "\($0.name) \($0.count)" }.joined(separator: ", ")
                 Text(L.t("dlg.sent.body", head + (who.isEmpty ? "." : " — " + who + "."))).font(.system(size: 11.5)).foregroundStyle(Theme.text2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)

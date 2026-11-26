@@ -17,11 +17,23 @@ enum L {
         return args.isEmpty ? s : String(format: s, arguments: args)
     }
 
+    /// Nombre localisé (séparateur de milliers de la langue).
+    static func num(_ n: Int) -> String { n.formatted(.number.locale(Locale(identifier: ["fr", "en", "es", "it"][lang.rawValue]))) }
+
+    /// Vrai pluriel : clé `<base>.one` (singulier) ou `<base>.count` (pluriel), le nombre localisé en premier argument,
+    /// les autres arguments à la suite. Le français met 0 et 1 au singulier ; les entiers passés en argument sont localisés.
+    static func n(_ base: String, _ n: Int, _ args: CVarArg...) -> String {
+        let singular = lang == .fr ? abs(n) < 2 : abs(n) == 1
+        guard let row = table[base + (singular ? ".one" : ".count")] else { return base }
+        let all: [CVarArg] = [num(n)] + args.map { ($0 as? Int).map(num) ?? $0 }
+        return String(format: row[lang.rawValue], arguments: all)
+    }
+
     /// Clés dont une langue manque (utilisé par `--check-l10n`).
     static func problems() -> [String] { table.filter { $0.value.count != 4 || $0.value.contains(where: { $0.isEmpty }) }.map(\.key).sorted() }
 
     // [fr, en, es, it]
-    static let table: [String: [String]] = [part0, part1, part2, part3, partAgent, partFind, partDialogues, partFamilies].reduce(into: [:]) { $0.merge($1) { a, _ in a } }
+    static let table: [String: [String]] = [part0, part1, part2, part3, partAgent, partFind, partDialogues, partFamilies, partPlural].reduce(into: [:]) { $0.merge($1) { a, _ in a } }
     private static let part0: [String: [String]] = [
         "unit.gb": ["Go", "GB", "GB", "GB"],
         "unit.mb": ["Mo", "MB", "MB", "MB"],
@@ -47,8 +59,6 @@ enum L {
         "files.drop": ["Déposez des fichiers ici", "Drop files here", "Suelta archivos aquí", "Trascina i file qui"],
         "files.dropHint": ["ou clic droit dans le Finder ▸ Extraire avec mSLICE", "or right-click in the Finder ▸ Extract with mSLICE", "o clic derecho en el Finder ▸ Extraer con mSLICE", "o clic destro nel Finder ▸ Estrai con mSLICE"],
         "files.extracted": ["Extrait", "Extracted", "Extraído", "Estratto"],
-        "files.piece": ["%d morceau", "%d piece", "%d fragmento", "%d parte"],
-        "files.pieces": ["%d morceaux", "%d pieces", "%d fragmentos", "%d parti"],
         "files.close": ["Fermer ce fichier", "Close this file", "Cerrar este archivo", "Chiudi questo file"],
         "empty.title": ["Déposez des fichiers audio ou vidéo", "Drop audio or video files", "Suelta archivos de audio o vídeo", "Trascina file audio o video"],
         "empty.sub": ["ou faites un clic droit dessus dans le Finder ▸ Extraire avec mSLICE", "or right-click them in the Finder ▸ Extract with mSLICE", "o haz clic derecho en el Finder ▸ Extraer con mSLICE", "o fai clic destro nel Finder ▸ Estrai con mSLICE"],
@@ -96,18 +106,9 @@ enum L {
         "tab.cut": ["Couper", "Cut", "Cortar", "Taglia"],
         "tab.people": ["Personnes", "People", "Personas", "Persone"],
         "bar.nothing": ["Rien à exporter : posez une entrée et une sortie", "Nothing to export: set an in and an out point", "Nada que exportar: marca una entrada y una salida", "Niente da esportare: imposta un ingresso e un'uscita"],
-        "export.files.one": ["1 fichier", "1 file", "1 archivo", "1 file"],
-        "exp.bar.n": ["Exporter %d morceaux", "Export %d pieces", "Exportar %d fragmentos", "Esporta %d parti"],
-        "exp.bar.one": ["Exporter 1 morceau", "Export 1 piece", "Exportar 1 fragmento", "Esporta 1 parte"],
         "exp.bar.same": ["mêmes réglages que l'original", "same settings as the original", "mismos ajustes que el original", "stesse impostazioni dell'originale"],
         "exp.bar.fmt.same": ["même format que l'original", "same format as the original", "mismo formato que el original", "stesso formato dell'originale"],
         "exp.settings": ["Réglages d'export", "Export settings", "Ajustes de exportación", "Impostazioni di esportazione"],
-        "exp.confirm.n": ["Exporter %d fichiers", "Export %d files", "Exportar %d archivos", "Esporta %d file"],
-        "exp.confirm.one": ["Exporter 1 fichier", "Export 1 file", "Exportar 1 archivo", "Esporta 1 file"],
-        "exp.title.one": ["Exporter 1 morceau", "Export 1 piece", "Exportar 1 fragmento", "Esporta 1 parte"],
-        "exp.title.n": ["Exporter %d morceaux", "Export %d pieces", "Exportar %d fragmentos", "Esporta %d parti"],
-        "exp.title.people": ["Exporter %d personnes", "Export %d people", "Exportar %d personas", "Esporta %d persone"],
-        "exp.title.people1": ["Exporter les moments choisis", "Export the chosen moments", "Exportar los momentos elegidos", "Esporta i momenti scelti"],
         "exp.q.files": ["Combien de fichiers ?", "How many files?", "¿Cuántos archivos?", "Quanti file?"],
         "exp.q.format": ["Format", "Format", "Formato", "Formato"],
         "exp.q.sound": ["Son", "Sound", "Sonido", "Audio"],
@@ -156,10 +157,6 @@ enum L {
         "people.mode.visible": ["sont visibles", "are on screen", "aparecen", "sono visibili"],
         "people.mode.speaks": ["parlent", "speak", "hablan", "parlano"],
         "people.mode.alone": ["sont seuls", "are alone", "están solos", "sono soli"],
-        "people.sum": ["%d moments", "%d moments", "%d momentos", "%d momenti"],
-        "people.total": ["%d moments · %@ au total", "%d moments · %@ in total", "%d momentos · %@ en total", "%d momenti · %@ in totale"],
-        "people.total1": ["1 moment · %2$@ au total", "1 moment · %2$@ in total", "1 momento · %2$@ en total", "1 momento · %2$@ in totale"],
-        "people.sum1": ["1 moment", "1 moment", "1 momento", "1 momento"],
         "people.pick": ["Cochez une personne pour voir ses moments", "Tick a person to see their moments", "Marca a una persona para ver sus momentos", "Seleziona una persona per vedere i suoi momenti"],
         "people.fold.settings": ["Réglages", "Settings", "Ajustes", "Impostazioni"],
         "people.add": ["Ajouter aux morceaux", "Add to the pieces", "Añadir a los fragmentos", "Aggiungi alle parti"],
@@ -195,11 +192,9 @@ enum L {
         "export.go.merged": ["Extraire 1 fichier fusionné", "Extract 1 merged file", "Extraer 1 archivo fusionado", "Estrai 1 file unito"],
         "export.running": ["Extraction en cours", "Extracting", "Extracción en curso", "Estrazione in corso"],
         "export.failed": ["Échec de l'extraction", "Extraction failed", "Falló la extracción", "Estrazione non riuscita"],
-        "export.files": ["%d fichiers", "%d files", "%d archivos", "%d file"],
         "export.waiting": ["En attente", "Waiting", "En espera", "In attesa"],
         "export.cancelled": ["Annulé", "Cancelled", "Cancelado", "Annullato"],
         "export.progress": ["%d %% terminé", "%d%% done", "%d%% completado", "%d%% completato"],
-        "done.title": ["%d fichiers créés", "%d files created", "%d archivos creados", "%d file creati"],
     ]
     private static let part2: [String: [String]] = [
         "done.sub": ["%@ · %@ s · dans le dossier choisi", "%@ · %@ s · in the chosen folder", "%@ · %@ s · en la carpeta elegida", "%@ · %@ s · nella cartella scelta"],
@@ -254,10 +249,7 @@ enum L {
         "batch.silence": ["Ou détecter les silences d'ouverture et de fin", "Or detect opening and closing silence", "O detectar los silencios de apertura y cierre", "Oppure rileva i silenzi iniziali e finali"],
         "batch.passthrough": ["Sans recompression (coupe à l'image clé)", "No re-encoding (cuts at the keyframe)", "Sin recomprimir (corta en el fotograma clave)", "Senza ricodifica (taglia al keyframe)"],
         "batch.result": ["Résultat : %@, … dans le même dossier. Les originaux ne sont jamais modifiés.", "Result: %@, … in the same folder. Originals are never modified.", "Resultado: %@, … en la misma carpeta. Los originales nunca se modifican.", "Risultato: %@, … nella stessa cartella. Gli originali non vengono mai modificati."],
-        "batch.go": ["Élaguer %d fichiers", "Trim %d files", "Recortar %d archivos", "Taglia %d file"],
-        "batch.go.one": ["Élaguer 1 fichier", "Trim 1 file", "Recortar 1 archivo", "Taglia 1 file"],
         "batch.running": ["Traitement : %@", "Processing: %@", "Procesando: %@", "Elaborazione: %@"],
-        "batch.done": ["%d fichiers élagués", "%d files trimmed", "%d archivos recortados", "%d file tagliati"],
         "batch.skipped": ["%@ : trop court pour retirer %@ s + %@ s", "%@: too short to remove %@ s + %@ s", "%@: demasiado corto para quitar %@ s + %@ s", "%@: troppo breve per rimuovere %@ s + %@ s"],
         "batch.seconds": ["s", "s", "s", "s"],
     ]

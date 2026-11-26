@@ -57,7 +57,7 @@ struct BatchView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             (Text("m").foregroundColor(Theme.brand) + Text("SLICE — ") + Text(L.t("batch.title"))).font(.system(size: 15, weight: .bold))
-            Text(model.urls.map(\.lastPathComponent).joined(separator: " · ")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(3)
+            Text(model.urls.map(\.lastPathComponent).joined(separator: " · ")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(3).truncationMode(.middle).help(model.urls.map(\.lastPathComponent).joined(separator: "\n"))
             if model.running || model.finished { progress } else { form }
         }
         .padding(18).frame(width: 460).background(Theme.bg)
@@ -73,7 +73,7 @@ struct BatchView: View {
             HStack(spacing: 8) {
                 Spacer()
                 Button(L.t("common.cancel"), action: close).buttonStyle(FlatButton())
-                Button { Task { await model.start() } } label: { Text(L.t(model.urls.count == 1 ? "batch.go.one" : "batch.go", model.urls.count)) }.buttonStyle(FlatButton(kind: .sand))
+                Button { Task { await model.start() } } label: { Text(L.n("batch.go", model.urls.count)) }.buttonStyle(FlatButton(kind: .sand))
             }
         }
     }
@@ -81,7 +81,7 @@ struct BatchView: View {
     private var progress: some View {
         VStack(alignment: .leading, spacing: 10) {
             if model.running { Text(L.t("batch.running", model.current)).font(.system(size: 12.5)).lineLimit(1).truncationMode(.middle) }
-            else { Text(L.t("batch.done", model.results.count)).font(.system(size: 14, weight: .bold)) }
+            else { Text(L.n("batch.done", model.results.count)).font(.system(size: 14, weight: .bold)).multilineTextAlignment(.center).frame(maxWidth: .infinity) }
             ProgressBar(value: model.overall)
             ForEach(model.notes, id: \.self) { Text($0).font(.system(size: 11.5)).foregroundStyle(Theme.warn).fixedSize(horizontal: false, vertical: true) }
             HStack { Spacer(); Button(L.t("common.close"), action: close).buttonStyle(FlatButton(kind: .primary)).disabled(model.running) }

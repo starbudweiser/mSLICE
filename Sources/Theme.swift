@@ -31,6 +31,9 @@ enum Theme {
     static let sandNS = dyn(0x0a84ff, 0x007aff)         // bouton principal « Exporter » (Flat Round : accent bleu)
     static let onSandNS = rgb(0xffffff)
     static let mediaNS = rgb(0x0c0c0e)
+    /// Survol et sélection sans encadré (Socle) : voile neutre posé sur le fond de repos, jamais de contour ni de bleu.
+    static let surfaceHover = Color(nsColor: dyn(0xf5f5f7, 0x1d1d1f)).opacity(0.07)
+    static let surfaceSelected = Color(nsColor: dyn(0xf5f5f7, 0x1d1d1f)).opacity(0.13)
 
     static let bg = Color(nsColor: bgNS), card = Color(nsColor: cardNS), ctl = Color(nsColor: ctlNS), line = Color(nsColor: lineNS)
     static let text = Color(nsColor: textNS), text2 = Color(nsColor: text2NS)
@@ -56,6 +59,41 @@ enum Appearance: String, CaseIterable {
 }
 
 // MARK: Composants de base
+
+/// Fond d'une ligne, carte ou option sélectionnable : repos (`rest`), survol `surface-hover`, sélection `surface-selected`,
+/// transition de 130 ms (coupée si « réduire les animations »). Aucun contour : le focus clavier reste celui du système.
+struct SelectableSurface: ViewModifier {
+    var selected: Bool
+    var rest: Color = .clear
+    var radius: CGFloat = Theme.rControl
+    var enabled = true
+    @State private var hover = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        content
+            .background(selected ? Theme.surfaceSelected : (hover && enabled ? Theme.surfaceHover : Color.clear), in: shape)
+            .background(rest, in: shape)
+            .onHover { hover = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.13), value: hover)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.13), value: selected)
+    }
+}
+/// Compteur qui change : les chiffres défilent (coupé si « réduire les animations »).
+struct NumberTicker: ViewModifier {
+    var value: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content.monospacedDigit().contentTransition(.numericText(value: Double(value)))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: value)
+    }
+}
+extension View {
+    func numberTicker(_ value: Int) -> some View { modifier(NumberTicker(value: value)) }
+    func selectableSurface(selected: Bool, rest: Color = .clear, radius: CGFloat = Theme.rControl, enabled: Bool = true) -> some View {
+        modifier(SelectableSurface(selected: selected, rest: rest, radius: radius, enabled: enabled))
+    }
+}
 
 struct Card<Content: View>: View {
     var padding: CGFloat = 12

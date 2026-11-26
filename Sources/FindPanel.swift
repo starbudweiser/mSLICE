@@ -140,7 +140,7 @@ private struct FindRow: View {
             Text(value).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(hover ? Theme.text : Theme.text2).lineLimit(1).fixedSize().layoutPriority(1)
         }
         .padding(.horizontal, 8).frame(height: 28)
-        .background(hover ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+        .selectableSurface(selected: false)
         .contentShape(Rectangle()).onHover { hover = $0 }
     }
 }
@@ -216,7 +216,7 @@ private struct ResultsView: View {
                 SectionTitle(L.t("find.analyzed"))
                 Spacer(minLength: 4)
                 if let i = find.index {
-                    Tag(text: i.hasVideo ? L.t("find.done.tag", duration(i.seconds), i.shotCount) : duration(i.seconds), kind: .ok)
+                    Tag(text: i.hasVideo ? L.n("find.done.tag", i.shotCount, duration(i.seconds)) : duration(i.seconds), kind: .ok)
                 }
                 Button { find.start() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.text2).frame(width: 22, height: 22) }
                     .buttonStyle(.plain).help(L.t("find.reanalyze"))
@@ -235,7 +235,7 @@ private struct ResultsView: View {
             }
             if rows.count > limit {
                 Button { all.wrappedValue.toggle() } label: {
-                    Text(all.wrappedValue ? L.t("find.less") : L.t("find.more", rows.count - limit)).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.text2)
+                    Text(all.wrappedValue ? L.t("find.less") : L.n("find.more", rows.count - limit)).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.text2)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).frame(height: 26).contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
@@ -258,14 +258,14 @@ private struct AddedCard: View {
     var openEdit: () -> Void
     var body: some View {
         Card(spacing: 10) {
-            HStack(spacing: 10) {
+            VStack(alignment: .center, spacing: 6) {
                 Image(systemName: "checkmark").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.ok).frame(width: 32, height: 32).background(Theme.ok.opacity(0.2), in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(info.count == 1 ? L.t("find.added1", Fmt.time(info.seconds, decimals: false)) : L.t("find.added", info.count, Fmt.time(info.seconds, decimals: false))).font(.system(size: 13, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .center, spacing: 2) {
+                    Text(L.n("find.added", info.count, Fmt.time(info.seconds, decimals: false))).font(.system(size: 13, weight: .semibold).monospacedDigit()).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text(L.t("find.added.sub")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 0)
             }
+            .multilineTextAlignment(.center).frame(maxWidth: .infinity)
             Button(action: openEdit) { Text(L.t("find.open.edit")).frame(maxWidth: .infinity) }.buttonStyle(FlatButton(kind: .primary))
         }
     }
@@ -291,13 +291,13 @@ private struct Avatar: View {
                     if let image { Image(nsImage: image).resizable().scaledToFill() } else { Image(systemName: "person.fill").font(.system(size: 20)).foregroundStyle(Theme.text2) }
                 }
                 .frame(width: 54, height: 54).clipShape(Circle())
-                .overlay(Circle().stroke(selected ? Theme.accent : Theme.line, lineWidth: selected ? 2 : 1))
+                .overlay(Circle().stroke(Theme.line, lineWidth: 1))
                 Text(row.title).font(.system(size: 11.5, weight: row.name == nil ? .medium : .semibold)).foregroundStyle(row.name == nil ? Theme.text2 : Theme.text)
                     .lineLimit(1).minimumScaleFactor(0.8).truncationMode(.tail).frame(maxWidth: .infinity)
                 Text(L.t("find.chars.stat", row.appearances, Fmt.time(row.seconds, decimals: false))).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 6).padding(.horizontal, 2)
-            .background(hover || selected ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+            .selectableSurface(selected: selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { hover = $0 }
@@ -493,7 +493,7 @@ private struct VoiceLine: View {
                 Text(L.t("find.voices.stat", row.turns, Fmt.time(row.seconds, decimals: false))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(hover ? Theme.text : Theme.text2).lineLimit(1).fixedSize().layoutPriority(1)
             }
             .padding(.horizontal, 8).frame(height: 32)
-            .background(hover ? Theme.ctl : .clear, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+            .selectableSurface(selected: false)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { hover = $0 }
@@ -598,7 +598,7 @@ private struct ProtagonistLine: View {
                 }.frame(width: 16, height: 16)
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(on ? Theme.ctl : (hover ? Theme.ctl.opacity(0.5) : .clear), in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+            .selectableSurface(selected: on)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { hover = $0 }
@@ -653,7 +653,7 @@ private struct ProtagonistLine: View {
         let f = Fmt.time(p.faceSeconds, decimals: false), v = Fmt.time(p.voiceSeconds, decimals: false)
         if p.person != nil, p.voice != nil { return L.t("find.proto.stat", f, v) }
         if p.person != nil { return L.t("find.proto.stat.face", f) }
-        return p.appearances == 1 ? L.t("find.proto.stat.voice1", v) : L.t("find.proto.stat.voice", v, p.appearances)
+        return L.n("find.proto.stat.voice", p.appearances, v)
     }
 
     private func save() {
@@ -695,7 +695,7 @@ private struct ModeCard: View {
         Card {
             SectionTitle(L.t("people.keep"))
             Segmented(options: find.availableModes.map { ($0, L.t("people.mode." + $0.rawValue)) }, selection: $find.protoMode)
-            Text(find.protoSel.isEmpty ? L.t("people.pick") : L.t(find.protoUnion.count == 1 ? "people.total1" : "people.total", find.protoUnion.count, Fmt.time(total, decimals: false))).font(.system(size: 11.5)).foregroundStyle(Theme.text2)
+            Text(find.protoSel.isEmpty ? L.t("people.pick") : L.n("people.total", find.protoUnion.count, Fmt.time(total, decimals: false))).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2)
         }
     }
 }
@@ -727,7 +727,7 @@ private struct PeopleBar: View {
         VStack(spacing: 8) {
             Rectangle().fill(Theme.line).frame(height: 0.5)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                (Text(L.t(nPieces == 1 ? "people.sum1" : "people.sum", nPieces)).fontWeight(.semibold).foregroundColor(Theme.text) + Text(names.isEmpty ? "" : " · " + names.joined(separator: ", ")).foregroundColor(Theme.text2))
+                (Text(L.n("people.sum", nPieces)).fontWeight(.semibold).foregroundColor(Theme.text) + Text(names.isEmpty ? "" : " · " + names.joined(separator: ", ")).foregroundColor(Theme.text2))
                     .font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 6)
                 Text(Fmt.time(total, decimals: false)).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize()
@@ -764,7 +764,7 @@ private struct SilenceRow: View {
                 Button { model.opts.trimSilence.toggle(); if model.opts.trimSilence { Task { await doc.ensureSilences() } } } label: { Chip(text: L.t("sil.trim"), on: on) }.buttonStyle(.plain)
                 if on {
                     if let gain { Text(L.t("sil.gain", Fmt.time(max(gain, 0), decimals: true)))
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail) }
+                        .font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail) }
                 } else {
                     Text(L.t("sil.hint")).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.tail)
                 }
@@ -814,7 +814,7 @@ private struct SelectionView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 SectionTitle(L.t("find.selection"))
                 Spacer(minLength: 4)
-                Text(find.keptCount == 1 ? L.t("find.selection.count1", find.result.passages.count) : L.t("find.selection.count", find.keptCount, find.result.passages.count)).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1)
+                Text(L.n("find.selection.count", find.keptCount, find.result.passages.count)).font(.system(size: 11.5)).foregroundStyle(Theme.text2).lineLimit(1)
             }
             FlowLayout(spacing: 6) {
                 ForEach(Array(find.ordered.enumerated()), id: \.element.token) { n, t in
@@ -891,7 +891,7 @@ private struct SelectionView: View {
                 Spacer(minLength: 4)
                 Text("\(n) · \(Fmt.time(total, decimals: false))").font(.system(size: 12, weight: .semibold).monospacedDigit()).lineLimit(1).fixedSize()
             }
-            Button { find.addToPieces() } label: { Text(n == 0 ? L.t("find.addnone") : L.t(n == 1 ? "find.add1" : "find.addn", n)).frame(maxWidth: .infinity) }
+            Button { find.addToPieces() } label: { Text(n == 0 ? L.t("find.addnone") : L.n("find.add", n)).frame(maxWidth: .infinity) }
                 .buttonStyle(FlatButton(kind: .primary, height: 36)).opacity(n == 0 ? 0.4 : 1).disabled(n == 0)
         }
     }
