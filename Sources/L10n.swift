@@ -48,6 +48,7 @@ enum L {
         "common.close": ["Fermer", "Close", "Cerrar", "Chiudi"],
         "common.cancel": ["Annuler", "Cancel", "Cancelar", "Annulla"],
         "common.done": ["Terminé", "Done", "Hecho", "Fine"],
+        "err.sourcegone": ["Le fichier d'origine n'existe plus : %@", "The original file no longer exists: %@", "El archivo original ya no existe: %@", "Il file originale non esiste più: %@"],
         "err.noffmpeg": ["Le moteur ffmpeg est introuvable.", "The ffmpeg engine could not be found.", "No se encuentra el motor ffmpeg.", "Il motore ffmpeg non è stato trovato."],
         "err.unsupported": ["« %@ » n'est pas un fichier audio ou vidéo lisible.", "“%@” is not a readable audio or video file.", "«%@» no es un archivo de audio o vídeo legible.", "«%@» non è un file audio o video leggibile."],
         "err.cantcopy": ["Ce format ne peut pas recevoir les flux de l'original sans recompression : choisissez « Identique » ou « Recompresser ».", "This format cannot hold the original streams without re-encoding: choose “Same” or “Re-encode”.", "Este formato no admite los flujos originales sin recomprimir: elige «Igual» o «Recomprimir».", "Questo formato non può contenere i flussi originali senza ricodifica: scegli «Identico» o «Ricodifica»."],

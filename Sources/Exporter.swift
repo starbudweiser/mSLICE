@@ -300,6 +300,14 @@ final class ExportRun: ObservableObject {
     func start(info: MediaInfo, outputs: [OutputItem], opts: ExportOptions, keyframes: [Double] = [], completion: (() -> Void)? = nil) {
         guard let ffmpeg = Tools.ffmpeg else { error = L.t("err.noffmpeg"); finished = true; completion?(); return }
         items = outputs.map { Item(name: $0.url.lastPathComponent, duration: $0.expected) }
+        // Le fichier d'origine doit exister (sinon ffmpeg ne dit que « No such file or directory »).
+        if !FileManager.default.fileExists(atPath: info.url.path) {
+            let msg = L.t("err.sourcegone", info.url.path)
+            for k in items.indices { items[k].state = .failed(msg) }
+            error = msg; finished = true; completion?(); return
+        }
+        // Le dossier de destination est créé s'il manque (dossier supprimé, volume démonté puis remonté…).
+        for o in outputs { try? FileManager.default.createDirectory(at: o.url.deletingLastPathComponent(), withIntermediateDirectories: true) }
         let plans = outputs.map { Planner.commands(info: info, item: $0, opts: opts, keyframes: keyframes) }
         let total = max(plans.flatMap { $0 }.reduce(0) { $0 + max($1.expected, 0.001) }, 0.001)
         let t0 = Date()
