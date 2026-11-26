@@ -99,7 +99,7 @@ final class FindModel: ObservableObject {
     @Published private(set) var voicesFailed = false
     @Published private(set) var voicesProgress = AnalysisProgress()
     @Published private(set) var voicesStarted = Date()
-    @Published var protoSel: [String] = [] { didSet { if oldValue != protoSel { added = nil; recompute() } } }
+    @Published var protoSel: [String] = [] { didSet { if oldValue != protoSel { added = nil; recompute(); if !protoSel.isEmpty { Task { await doc.ensureSilences() } } } } }
     @Published var protoMode: ProtoMode = .visible { didSet { if oldValue != protoMode { recompute() } } }
     @Published var protoOut: ProtoOut = .each
     @Published var protoNames: [String: String] = [:]          // noms de fichiers choisis dans la feuille d'export (clé : nom du groupe)
@@ -113,7 +113,9 @@ final class FindModel: ObservableObject {
         if let i = AnalysisStore.load(doc.info) { setIndex(i) }
         if let f = FaceStore.load(doc.info) { setFaces(f, keepTerms: true) }
         if let v = VoiceStore.load(doc.info) { setVoices(v, keepTerms: true) }
+        loudnessSink = doc.$loudness.sink { [weak self] _ in DispatchQueue.main.async { self?.protoCache = nil; self?.recompute(); self?.objectWillChange.send() } }          // les bords se calent dans les pauses dès que le niveau sonore est mesuré
     }
+    private var loudnessSink: AnyCancellable?
 
     var hasIndex: Bool { index != nil }
 
@@ -384,10 +386,20 @@ final class FindModel: ObservableObject {
     var protoPieces: [(id: String, name: String, segments: [(start: Double, end: Double)])] {
         guard let finder else { return [] }
         let whole = protoWhole && (index?.hasVideo ?? false)
-        let key = protoSel.joined(separator: ",") + "|\(protoMode)|\(whole)|" + protagonists.map { "\($0.id)\($0.name ?? "")" }.joined(separator: ",")
+        let key = protoSel.joined(separator: ",") + "|\(protoMode)|\(whole)|\(doc.loudness != nil)|" + protagonists.map { "\($0.id)\($0.name ?? "")" }.joined(separator: ",")
         if let c = protoCache, c.key == key { return c.value }
         let value: [(id: String, name: String, segments: [(start: Double, end: Double)])] = protoSel.compactMap { id in
             guard let p = protagonist(id), let t = protoTerm(p, protoMode) else { return nil }
+            // « parle » / voix : moments précis de la voix (0,25 s, sans comblement au travers de la parole d'un autre, bords calés dans les pauses), pas la grille de 0,5 s ni la marge de 0,3 s
+            if t.kind == .voice || t.kind == .speaks, let voices {
+                let groups: [Int32] = t.kind == .voice ? [Int32(t.key)].compactMap { $0 } : voices.link.filter { $0.value == Int32(t.key) && !voices.hidden.contains($0.key) }.map(\.key)
+                var all: [(start: Double, end: Double)] = []
+                for g in groups where !voices.hidden.contains(g) { all += voices.moments(of: g, profile: doc.loudness) }
+                all.sort { $0.start < $1.start }
+                var merged: [(start: Double, end: Double)] = []
+                for m in all { if let l = merged.last, m.start <= l.end { merged[merged.count - 1].end = max(l.end, m.end) } else { merged.append(m) } }
+                return (id, p.title, merged)
+            }
             var q = FindQuery(terms: [t]); q.wholeShots = whole
             return (id, p.title, finder.run(q).segments)
         }

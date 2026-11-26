@@ -397,7 +397,8 @@ with zipfile.ZipFile(d + '/ok.zip', 'w') as z: z.writestr('a.txt', 'x')
             check(v.group.last == -1, "voix : une fenêtre isolée n'est pas une voix")
             let st = v.voices()
             check(st.count == 3 && st.allSatisfy { $0.turns == 2 || $0.turns == 1 } && Set(st.map(\.id)).count == 3, "voix : liste du plus long au plus court \(st.map { "\($0.id):\(f1($0.seconds)) s/\($0.turns)" })")
-            let a = v.group[0]
+            func mostly(_ who: Int) -> Int32 { let g = (0 ..< v.count).filter { truth[$0] == who && v.group[$0] >= 0 }.map { v.group[$0] }; return Dictionary(grouping: g, by: { $0 }).max { $0.value.count < $1.value.count }?.key ?? -1 }   // les fenêtres ambiguës sont écartées : on prend la voix dominante de la personne
+            let a = mostly(0)
             let ivA = v.intervals(of: a)
             check(ivA.count == 2 && abs(ivA[0].start) < 1 && ivA[0].end > 10 && ivA[0].end < 13.5 && ivA[1].start > 39 && ivA[1].end < 49.5, "voix : plages de la voix A \(ivA.map { "\(f1($0.start))-\(f1($0.end))" })")
             // sérialisation : aller-retour, fichier trafiqué refusé
@@ -410,7 +411,7 @@ with zipfile.ZipFile(d + '/ok.zip', 'w') as z: z.writestr('a.txt', 'x')
                 check(bad2.serialized().flatMap(VoiceIndex.init(serialized:)) == nil, "voix : instants non triés refusés à la relecture")
             } else { check(false, "voix : sérialisation") }
             check(VoiceIndex(serialized: Data("not a plist".utf8)) == nil, "voix : fichier illisible refusé")
-            var m = v; let b = m.group[truth.firstIndex(of: 1)!]
+            var m = v; let b = mostly(1)
             m.link[b] = 1; m.merge(b, into: a)
             check(m.voices().count == 2 && m.link[a] == 1 && m.link[b] == nil, "voix : réunir deux voix garde le lien et vide l'autre")
 

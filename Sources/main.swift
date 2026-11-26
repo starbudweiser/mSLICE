@@ -81,6 +81,54 @@ if let i = CommandLine.arguments.firstIndex(of: "--silence-info"), CommandLine.a
     dispatchMain()
 }
 
+// `mSLICE --clean-build <fichier> <sortie.flac>` : fabrique la piste « voix seules » d'un fichier sans fenêtre (mesures de synchronisation).
+if let i = CommandLine.arguments.firstIndex(of: "--clean-build"), CommandLine.arguments.indices.contains(i + 2) {
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1]), out = URL(fileURLWithPath: CommandLine.arguments[i + 2])
+    Task { @MainActor in
+        guard let info = Probe.read(url) else { print("sonde impossible"); exit(1) }
+        let t0 = Date()
+        let ok = await CleanVoice.build(info, job: AnalysisJob(), slot: false) { _ in }
+        guard ok, CleanVoice.exists(info) else { print("ÉCHEC"); exit(1) }
+        try? FileManager.default.removeItem(at: out)
+        try? FileManager.default.copyItem(at: CleanVoice.url(info), to: out)
+        print(String(format: "OK : %.1f s", Date().timeIntervalSince(t0))); exit(0)
+    }
+    dispatchMain()
+}
+
+// `mSLICE --voice-dump <fichier> <sortie.json>` : empreintes de voix (une par fenêtre) et regroupement actuel, pour étudier le regroupement hors de l'appli (banc d'essai).
+if let i = CommandLine.arguments.firstIndex(of: "--voice-dump"), CommandLine.arguments.indices.contains(i + 2) {
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1]), out = URL(fileURLWithPath: CommandLine.arguments[i + 2])
+    Task { @MainActor in
+        guard let info = Probe.read(url) else { print("sonde impossible"); exit(1) }
+        guard let v = await VoiceAnalyzer.run(info, job: AnalysisJob(), slot: false, progress: { _ in }) else { print("ÉCHEC (modèle de voix installé ?)"); exit(1) }
+        var rows: [[String: Any]] = []
+        for k in 0 ..< v.count { rows.append(["t": Double(v.t[k]), "g": Int(v.group[k]), "v": v.vector(k).map { Double($0) }]) }
+        let d = try? JSONSerialization.data(withJSONObject: ["duration": v.duration, "window": VoiceIndex.window, "hop": VoiceIndex.hop, "windows": rows])
+        try? d?.write(to: out)
+        print("OK : \(v.count) fenêtres, \(v.voices().count) voix, \(String(format: "%.1f", v.seconds)) s"); exit(0)
+    }
+    dispatchMain()
+}
+
+// `mSLICE --voice-moments <fichier> <sortie.json>` : voix reconnues et leurs moments (nouveau calcul précis, avec le niveau sonore) ; banc d'essai des voix.
+if let i = CommandLine.arguments.firstIndex(of: "--voice-moments"), CommandLine.arguments.indices.contains(i + 2) {
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1]), out = URL(fileURLWithPath: CommandLine.arguments[i + 2])
+    Task { @MainActor in
+        guard let info = Probe.read(url) else { print("sonde impossible"); exit(1) }
+        guard let v = await VoiceAnalyzer.run(info, job: AnalysisJob(), slot: false, progress: { _ in }) else { print("ÉCHEC (modèle de voix installé ?)"); exit(1) }
+        let lp = await LoudnessProfile.measure(info)
+        var res: [[String: Any]] = []
+        for s in v.voices() {
+            res.append(["id": Int(s.id), "seconds": s.seconds, "moments": v.moments(of: s.id, profile: lp).map { [$0.start, $0.end] }, "raw": v.intervals(of: s.id).map { [$0.start, $0.end] }])
+        }
+        let ambiguous = v.group.filter { $0 < 0 }.count
+        try? JSONSerialization.data(withJSONObject: ["voices": res, "windows": v.count, "ambiguous": ambiguous]).write(to: out)
+        print("OK : \(v.voices().count) voix, \(ambiguous) fenêtres ambiguës sur \(v.count)"); exit(0)
+    }
+    dispatchMain()
+}
+
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate

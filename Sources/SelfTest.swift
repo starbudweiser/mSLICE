@@ -80,6 +80,39 @@ enum SelfTest {
             let tc = Date()
             let built = await CleanVoice.build(info, job: AnalysisJob(), slot: false) { _ in }
             check(built && CleanVoice.exists(info), "piste « voix seules » : fabriquée en \(String(format: "%.1f", Date().timeIntervalSince(tc))) s pour \(Fmt.time(d, decimals: false))")
+            if built, let ff = Tools.ffmpeg {
+                // synchronisation : la piste nettoyée n'est pas en retard sur l'original (l'isolation de macOS retarde de ~60 ms), et AVFoundation s'y place à l'échantillon près
+                let ref = dir.appendingPathComponent("sync-ref.wav"), voice = dir.appendingPathComponent("sync-voice.wav")
+                _ = await Run.exec(ff, ["-v", "error", "-y", "-nostdin", "-i", info.url.path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", ref.path])
+                _ = await Run.exec(ff, ["-v", "error", "-y", "-nostdin", "-i", CleanVoice.url(info).path, "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", voice.path])
+                let lag = AudioLag.estimate(reference: ref, processed: voice)
+                check(lag != nil ? abs(lag!) <= 0.011 : true, "voix seules : retard de la piste sur l'original \(lag.map { String(format: "%+.0f ms", $0 * 1000) } ?? "non mesurable (son trop court ou muet)")")
+                var worst = 0.0
+                for frac in [0.1, 0.35, 0.6, 0.85] where d > 20 {
+                    let t = d * frac
+                    func samples(_ u: URL) async -> [Float] {
+                        let a = AVURLAsset(url: u)
+                        guard let tr = try? await a.loadTracks(withMediaType: .audio).first, let r = try? AVAssetReader(asset: a) else { return [] }
+                        let o = AVAssetReaderTrackOutput(track: tr, outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVNumberOfChannelsKey: 1, AVSampleRateKey: 8000])
+                        r.add(o); r.timeRange = CMTimeRange(start: CMTime(seconds: t, preferredTimescale: 48000), duration: CMTime(seconds: 4, preferredTimescale: 48000))
+                        guard r.startReading() else { return [] }
+                        var out: [Float] = []
+                        while let b = o.copyNextSampleBuffer(), let bb = CMSampleBufferGetDataBuffer(b) {
+                            var len = 0; var p: UnsafeMutablePointer<Int8>?
+                            CMBlockBufferGetDataPointer(bb, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &len, dataPointerOut: &p)
+                            out += Array(UnsafeBufferPointer(start: UnsafeRawPointer(p!).assumingMemoryBound(to: Float.self), count: len / 4))
+                        }
+                        return out
+                    }
+                    let x = await samples(voice), y = await samples(CleanVoice.url(info))
+                    guard x.count > 4000, y.count > 4000, x.reduce(0, { $0 + $1 * $1 }) / Float(x.count) > 1e-5 else { continue }        // fenêtres sans parole : corrélation sans sens
+                    let n = min(x.count, y.count) - 2000; var best: (Float, Int) = (-1e9, 0)
+                    for l in -400 ... 400 { var c: Float = 0; for i in stride(from: 400, to: n - 400, by: 2) { c += x[i] * y[i + l] }; if c > best.0 { best = (c, l) } }
+                    worst = max(worst, abs(Double(best.1)) / 8)                 // ms à 8 kHz
+                }
+                check(worst <= 2, "voix seules : positionnement exact après déplacement (écart maximal \(String(format: "%.1f", worst)) ms sur 4 positions)")
+                try? FileManager.default.removeItem(at: ref); try? FileManager.default.removeItem(at: voice)
+            }
             if built {
                 // lecteur : la piste nettoyée remplace le son, la position et la lecture sont conservées, retour au son d'origine possible
                 let pm = PlayerModel()
