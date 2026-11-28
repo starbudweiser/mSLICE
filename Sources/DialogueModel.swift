@@ -91,17 +91,23 @@ final class DialogueModel: ObservableObject {
     /// Affine l'attribution avec le vote de chaque réplique : empreintes de voix calculées à l'intérieur de la réplique, classées sur les profils des voix (`LineVoices`).
     /// Tourne en arrière-plan ; les noms des sous-titres et les choix manuels ne bougent pas.
     func refineSpeakers() {
-        guard !voting else { return }
+        guard !voting else { pendingVote = true; return }
         voting = true
         Task { [weak self] in
-            defer { self?.voting = false }
+            defer { if let self { self.voting = false; if self.pendingVote { self.pendingVote = false; self.refineSpeakers() } } }
             guard let self, let v = self.doc.find.voices, let lines = self.data?.lines else { return }
             let todo = lines.filter { !$0.discarded && $0.manual != true && $0.who == nil }
-            let votes = await LineVoices.votes(todo, info: self.doc.info, voices: v)
+            // les répliques attribuées à la main à un protagoniste qui a une voix : références pour les profils
+            let taught: [(line: DialogueLine, voice: Int32)] = lines.compactMap { l in
+                guard !l.discarded, l.manual == true, let sp = l.speaker, let voice = self.doc.find.protagonist(sp)?.voice else { return nil }
+                return (l, voice)
+            }
+            let votes = await LineVoices.votes(todo, taught: taught, info: self.doc.info, voices: v)
             guard !votes.isEmpty, self.data != nil else { return }
             self.mutate { Speakers.apply(&$0, candidates: self.doc.find.speakerCandidates(), votes: votes); $0.voted = true }
         }
     }
+    private var pendingVote = false
     private var voting = false, triedVote = false
     /// Les répliques déjà là (ouverture d'un fichier analysé avant cette amélioration) sont affinées une fois, dès que les voix sont connues.
     private func autoVote() {
@@ -110,7 +116,10 @@ final class DialogueModel: ObservableObject {
         refineSpeakers()
     }
 
-    func setSpeaker(_ id: UUID, protagonist: String?) { mutate { $0.setSpeaker(id, speaker: protagonist, name: nil) } }
+    func setSpeaker(_ id: UUID, protagonist: String?) {
+        mutate { $0.setSpeaker(id, speaker: protagonist, name: nil) }
+        if protagonist != nil { refineSpeakers() }                // la correction sert de référence : les autres répliques sont reclassées
+    }
     /// Nom tapé pour une réplique : si elle est attribuée à un protagoniste, c'est lui qui est renommé (même nom partout, onglet Trouver compris) ;
     /// sinon c'est un nom libre gardé dans la réplique.
     func setName(_ id: UUID, _ name: String) {

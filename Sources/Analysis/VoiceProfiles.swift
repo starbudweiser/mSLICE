@@ -95,16 +95,37 @@ struct VoiceProfiles: Sendable {
         return cur.group
     }
 
-    /// La voix qui ressemble le plus à une réplique (moyenne de ses empreintes), avec son avance sur la suivante.
-    func classify(_ vectors: [[Float]]) -> LineVote? {
-        guard !vectors.isEmpty, !ids.isEmpty else { return nil }
+    /// L'empreinte d'une réplique : moyenne de ses empreintes centrées (norme 1) ; nil si elle n'en a pas.
+    func query(_ vectors: [[Float]]) -> [Float]? {
+        guard !vectors.isEmpty else { return nil }
         let dim = mu.count
         var sum = [Float](repeating: 0, count: dim)
         for e in vectors {
             var d = [Float](repeating: 0, count: dim); vDSP_vsub(mu, 1, e, 1, &d, 1, vDSP_Length(dim))
             let u = Self.unit(d); vDSP_vadd(sum, 1, u, 1, &sum, 1, vDSP_Length(dim))
         }
-        let q = Self.unit(sum)
+        return Self.unit(sum)
+    }
+
+    /// Profils complétés par les répliques que l'utilisateur a attribuées à la main (`manual`) : leur parole est une référence sûre, elle rejoint le profil de la voix choisie
+    /// (poids 0,3 par réplique, 1 au plus : un profil de noyau reste le socle, quelques corrections l'orientent sans le remplacer).
+    func enrolled(_ examples: [Int32: [[Float]]]) -> VoiceProfiles {
+        var out = self
+        for (k, id) in ids.enumerated() {
+            guard let list = examples[id], !list.isEmpty else { continue }
+            var sum = [Float](repeating: 0, count: mu.count)
+            for q in list { vDSP_vadd(sum, 1, q, 1, &sum, 1, vDSP_Length(mu.count)) }
+            let w = min(0.3 * Float(list.count), 1)
+            let m = Self.unit(sum).map { $0 * w }
+            var p = proto[k]; vDSP_vadd(p, 1, m, 1, &p, 1, vDSP_Length(mu.count))
+            out.proto[k] = Self.unit(p)
+        }
+        return out
+    }
+
+    /// La voix qui ressemble le plus à une réplique (moyenne de ses empreintes), avec son avance sur la suivante.
+    func classify(_ vectors: [[Float]]) -> LineVote? {
+        guard !ids.isEmpty, let q = query(vectors) else { return nil }
         var best = -2 as Float, second = -2 as Float, bi = 0
         for (i, p) in proto.enumerated() {
             let s = Self.dot(q, p)
@@ -116,12 +137,17 @@ struct VoiceProfiles: Sendable {
 
 enum LineVoices {
     /// Un vote par réplique (clé : identifiant de la réplique) ; vide si le modèle de voix ou le son manque. Lit la piste « voix seules » si elle existe, sinon l'original.
-    static func votes(_ lines: [DialogueLine], info: MediaInfo, voices: VoiceIndex, job: AnalysisJob = AnalysisJob()) async -> [UUID: LineVote] {
-        guard !lines.isEmpty, let profiles = VoiceProfiles.build(voices), let embedder = VoiceEmbedder() else { return [:] }
+    /// `taught` : répliques attribuées à la main à une voix ; leur parole complète les profils avant le vote (`VoiceProfiles.enrolled`).
+    static func votes(_ lines: [DialogueLine], taught: [(line: DialogueLine, voice: Int32)] = [], info: MediaInfo, voices: VoiceIndex, job: AnalysisJob = AnalysisJob()) async -> [UUID: LineVote] {
+        guard !lines.isEmpty, var profiles = VoiceProfiles.build(voices), let embedder = VoiceEmbedder() else { return [:] }
         let url = CleanVoice.exists(info) ? CleanVoice.url(info) : await Analyzer.source(info)
-        let ranges = lines.map { (start: $0.start, end: $0.end) }
+        let all = lines + taught.map(\.line)
+        let ranges = all.map { (start: $0.start, end: $0.end) }
         let found: [[(t: Double, v: [Float])]]? = await onThread { SegmentEmbedding.embedRanges(url: url, ranges: ranges, embedder: embedder, job: job) }
         guard let found else { return [:] }
+        var examples: [Int32: [[Float]]] = [:]
+        for (k, t) in taught.enumerated() { if let q = profiles.query(found[lines.count + k].map(\.v)) { examples[t.voice, default: []].append(q) } }
+        if !examples.isEmpty { profiles = profiles.enrolled(examples) }
         var out: [UUID: LineVote] = [:]
         for (i, l) in lines.enumerated() { if let v = profiles.classify(found[i].map(\.v)) { out[l.id] = v } }
         return out

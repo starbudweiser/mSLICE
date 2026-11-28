@@ -132,6 +132,11 @@ enum DialoguesTest {
         check(Speakers.assign(start: 1, end: 4, candidates: voted, vote: LineVote(voice: 1, sim: 0.5, margin: 0.3)) == "v1", "qui parle : un vote net de la réplique passe avant les fenêtres de la grille")
         check(Speakers.assign(start: 1, end: 4, candidates: voted, vote: LineVote(voice: 1, sim: 0.12, margin: 0.03)) == "p0", "qui parle : un vote hésitant est ignoré (retour aux fenêtres)")
         check(Speakers.assign(start: 1, end: 4, candidates: voted, vote: LineVote(voice: 7, sim: 0.6, margin: 0.4)) == "p0", "qui parle : un vote pour une voix écartée (sans protagoniste) est ignoré")
+        let prof = VoiceProfiles(mu: [0, 0, 0, 0], ids: [0, 1], proto: [[1, 0, 0, 0], [0, 1, 0, 0]])
+        let q: [[Float]] = [[0.6, 0.8, 0, 0]]
+        check(prof.classify(q)?.voice == 1, "profils : une parole entre deux voix va à la plus proche")
+        let taught = prof.enrolled([0: [[0.6, 0.8, 0, 0], [0.6, 0.8, 0, 0], [0.6, 0.8, 0, 0]]])
+        check(taught.classify(q)?.voice == 0 && prof.classify(q)?.voice == 1, "profils : trois répliques attribuées à la main à la voix 0 orientent son profil (l'original ne bouge pas)")
         check(Speakers.assign(start: 9, end: 11, candidates: cast) == nil, "qui parle : deux voix à parts égales → pas de choix (« Qui ? »)")
         check(Speakers.assign(start: 45, end: 48, candidates: cast) == nil, "qui parle : personne ne parle ni n'est à l'écran → nil")
         let silentFace = [SpeakerCandidate(id: "p0", voice: [(0, 5)], face: [(0, 20)]), SpeakerCandidate(id: "p1", voice: [], face: [(10, 20)])]
