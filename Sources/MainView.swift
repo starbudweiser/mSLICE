@@ -886,17 +886,17 @@ struct DoneSheet: View {
             .multilineTextAlignment(.center).frame(maxWidth: .infinity)
             VStack(spacing: 6) {
                 ForEach(run.items) { it in
-                    HStack { Text(it.name).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle).help(it.name); Spacer(minLength: 8)
-                        Text("\(Fmt.time(it.duration)) · \(Fmt.size(it.bytes))").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2) }
-                        .padding(.horizontal, 10).frame(height: 30).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
+                    HStack(spacing: 10) { Text(it.name).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle).help(it.name).layoutPriority(1)
+                        Text("\(Fmt.time(it.duration)) · \(Fmt.size(it.bytes))").font(.system(size: 11.5).monospacedDigit()).foregroundStyle(Theme.text2).lineLimit(1).fixedSize() }
+                        .frame(maxWidth: .infinity).padding(.horizontal, 10).frame(height: 30).background(Theme.ctl, in: RoundedRectangle(cornerRadius: Theme.rControl, style: .continuous))
                 }
             }
             HStack(spacing: 8) {
-                Spacer()
                 Button(L.t("done.trash")) { model.trashOriginal() }.buttonStyle(FlatButton())
                 Button(L.t("done.reveal")) { model.reveal() }.buttonStyle(FlatButton())
                 Button(L.t("common.close")) { model.closeSheet() }.buttonStyle(FlatButton(kind: .primary))
             }
+            .frame(maxWidth: .infinity)
         }
     }
 }
