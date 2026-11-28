@@ -6,6 +6,7 @@ import Foundation
 /// Un protagoniste vu comme des plages de temps : quand sa voix parle, quand son visage est à l'écran.
 struct SpeakerCandidate: Sendable {
     var id: String                                          // « p3 » ou « v2 », comme `Protagonist.id`
+    var voiceID: Int32? = nil                               // la voix du protagoniste (pour le vote par réplique, `LineVoices`)
     var voice: [(start: Double, end: Double)] = []
     var face: [(start: Double, end: Double)] = []
 }
@@ -19,9 +20,11 @@ enum Speakers {
     }
 
     /// Le protagoniste qui parle pendant [start, end] ; nil si on ne peut pas trancher.
-    static func assign(start: Double, end: Double, candidates: [SpeakerCandidate]) -> String? {
+    static func assign(start: Double, end: Double, candidates: [SpeakerCandidate], vote: LineVote? = nil) -> String? {
         let dur = end - start
         guard dur > 0 else { return nil }
+        // 0. le vote de la réplique elle-même (empreintes calculées à l'intérieur de la réplique) quand il est net : il passe avant les fenêtres de la grille, qui débordent sur les voisines
+        if let vote, vote.confident, let c = candidates.first(where: { $0.voiceID == vote.voice }) { return c.id }
         // 1. la voix qui parle le plus pendant la réplique
         let voices = candidates.filter { !$0.voice.isEmpty }.map { ($0.id, overlap($0.voice, start, end)) }.sorted { $0.1 > $1.1 }
         if let best = voices.first, best.1 / dur >= minVoiceShare || best.1 >= min(minVoiceSeconds, dur) {
@@ -39,10 +42,10 @@ enum Speakers {
     }
 
     /// Attribue les répliques sans nom de sous-titres ni choix de l'utilisateur ; rend le nombre de répliques attribuées.
-    @discardableResult static func apply(_ set: inout DialogueSet, candidates: [SpeakerCandidate]) -> Int {
+    @discardableResult static func apply(_ set: inout DialogueSet, candidates: [SpeakerCandidate], votes: [UUID: LineVote] = [:]) -> Int {
         var n = 0
         for i in set.lines.indices where set.lines[i].manual != true && set.lines[i].who == nil {
-            let a = assign(start: set.lines[i].start, end: set.lines[i].end, candidates: candidates)
+            let a = assign(start: set.lines[i].start, end: set.lines[i].end, candidates: candidates, vote: votes[set.lines[i].id])
             set.lines[i].speaker = a
             if a != nil { n += 1 }
         }

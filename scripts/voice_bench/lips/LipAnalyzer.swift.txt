@@ -1,0 +1,129 @@
+// mSLICE — mouvement des lèvres : qui est en train de parler à l'écran. Une passe de décodage à cadence élevée (12,5 images/s par défaut : une syllabe dure ~0,2 s),
+// détection des visages et de leurs lèvres (Vision), puis, pour chaque visage, quelques mesures de la bouche (ouverture, largeur) et une petite vignette de la
+// luminance de la zone des lèvres. Le suivi d'un visage d'une image à l'autre et le calcul du mouvement sont faits plus loin (`LipActivity`).
+// Aucune image n'est conservée. Tourne dans le processus d'analyse, qualité de service « utilitaire », annulable.
+import AVFoundation
+import CoreImage
+import Foundation
+import Vision
+
+enum LipPass {
+    static let fps = 12.5
+    static let decodeWidth = 960
+    static let minPixels = 28.0            // plus petit visage gardé (hauteur, en pixels de l'image analysée)
+    static let gridW = 16, gridH = 8
+
+    struct Face: Sendable {
+        var box: [Float]                   // x, y, largeur, hauteur (0…1, origine en haut à gauche)
+        var yaw: Float                     // rotation de la tête (rad) : de profil, les lèvres sont peu fiables
+        var m: [Float]                     // ouverture intérieure, largeur intérieure, ouverture extérieure, largeur extérieure (÷ hauteur du visage)
+        var grid: [UInt8]                  // luminance de la zone des lèvres, gridW × gridH (vide si l'orientation de la vidéo n'est pas droite)
+    }
+    struct Frame: Sendable { var t: Float; var faces: [Face] }
+
+    private final class Box: @unchecked Sendable {
+        private let lock = NSLock(); private var d: [Int: Frame] = [:]
+        func set(_ i: Int, _ f: Frame) { lock.lock(); d[i] = f; lock.unlock() }
+        func all() -> [Frame] { lock.lock(); defer { lock.unlock() }; return d.keys.sorted().compactMap { d[$0] } }
+    }
+
+    /// Les visages d'une image avec leurs mesures de bouche.
+    static func faces(in pb: CVPixelBuffer, orient: CGImagePropertyOrientation) -> [Face] {
+        let request = VNDetectFaceLandmarksRequest()
+        let handler = VNImageRequestHandler(cvPixelBuffer: pb, orientation: orient, options: [:])
+        guard (try? handler.perform([request])) != nil, let found = request.results, !found.isEmpty else { return [] }
+        let up = orient == .up
+        let pw = CVPixelBufferGetWidth(pb), ph = CVPixelBufferGetHeight(pb)
+        let W = Double(up ? pw : ph), H = Double(up ? ph : pw)
+        let size = CGSize(width: W, height: H)
+        var luma: UnsafeMutablePointer<UInt8>?
+        var stride = 0
+        if up, CVPixelBufferGetPlaneCount(pb) > 0 {
+            CVPixelBufferLockBaseAddress(pb, .readOnly)
+            luma = CVPixelBufferGetBaseAddressOfPlane(pb, 0)?.assumingMemoryBound(to: UInt8.self)
+            stride = CVPixelBufferGetBytesPerRowOfPlane(pb, 0)
+        }
+        defer { if luma != nil { CVPixelBufferUnlockBaseAddress(pb, .readOnly) } }
+        var out: [Face] = []
+        for f in found.sorted(by: { $0.boundingBox.minX < $1.boundingBox.minX }) {
+            let bb = f.boundingBox, fh = bb.height * H
+            guard fh >= minPixels, let lm = f.landmarks, let inner = lm.innerLips, let outer = lm.outerLips else { continue }
+            let ip = inner.pointsInImage(imageSize: size), op = outer.pointsInImage(imageSize: size)
+            guard ip.count >= 4, op.count >= 4 else { continue }
+            func ext(_ p: [CGPoint]) -> (w: Double, h: Double, minX: Double, maxX: Double, minY: Double, maxY: Double) {
+                let xs = p.map { Double($0.x) }, ys = p.map { Double($0.y) }
+                return (xs.max()! - xs.min()!, ys.max()! - ys.min()!, xs.min()!, xs.max()!, ys.min()!, ys.max()!)
+            }
+            let a = ext(ip), b = ext(op)
+            var grid: [UInt8] = []
+            if let luma {
+                // zone des lèvres élargie (un quart de la largeur, 40 % de la hauteur) ; l'origine de Vision est en bas à gauche
+                let px = b.w * 0.25, py = max(b.h * 0.4, b.w * 0.15)
+                let x0 = max(b.minX - px, 0), x1 = min(b.maxX + px, W - 1), y0 = max(b.minY - py, 0), y1 = min(b.maxY + py, H - 1)
+                if x1 - x0 >= 4, y1 - y0 >= 3 {
+                    grid.reserveCapacity(gridW * gridH)
+                    for gy in 0 ..< gridH {
+                        for gx in 0 ..< gridW {
+                            let cx = x0 + (Double(gx) + 0.5) / Double(gridW) * (x1 - x0)
+                            let cy = H - (y0 + (Double(gy) + 0.5) / Double(gridH) * (y1 - y0))          // ligne de haut en bas dans l'image
+                            let xi = min(max(Int(cx), 0), pw - 1), yi = min(max(Int(cy), 0), ph - 1)
+                            grid.append(luma[yi * stride + xi])
+                        }
+                    }
+                }
+            }
+            out.append(Face(box: [Float(bb.minX), Float(1 - bb.maxY), Float(bb.width), Float(bb.height)], yaw: Float(f.yaw?.doubleValue ?? 0),
+                            m: [Float(a.h / fh), Float(a.w / fh), Float(b.h / fh), Float(b.w / fh)], grid: grid))
+        }
+        return out
+    }
+
+    /// Une passe de décodage ; `ranges` : plages (s) à analyser (nil : tout le fichier). nil si annulée ou impossible.
+    static func run(url: URL, duration: Double, fps: Double = LipPass.fps, ranges: [(Double, Double)]? = nil, job: AnalysisJob, state: ProgressBox) -> [Frame]? {
+        let asset = AVURLAsset(url: url)
+        guard let (track, natural, transform) = loadTrack(asset, .video) else { return nil }
+        let nw = max(abs(natural.width), 16), nh = max(abs(natural.height), 16)
+        let w = min(Double(decodeWidth), nw), scale = w / nw
+        let outW = Int(w) & ~1, outH = Int(nh * scale) & ~1
+        guard let reader = try? AVAssetReader(asset: asset) else { return nil }
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelBufferWidthKey as String: outW, kCVPixelBufferHeightKey as String: outH,
+        ])
+        out.alwaysCopiesSampleData = false
+        guard reader.canAdd(out) else { return nil }
+        reader.add(out)
+        guard reader.startReading() else { return nil }
+        let orient = VideoPass.orientation(transform)
+        let box = Box()
+        let queue = DispatchQueue(label: "fr.stephan.mslice.lips", qos: .utility, attributes: .concurrent)
+        let slots = DispatchSemaphore(value: 3)
+        let group = DispatchGroup()
+        let step = 1 / fps
+        var nextSample = 0, lastPTS = 0.0
+        while let sb = out.copyNextSampleBuffer() {
+            if job.cancelled { reader.cancelReading(); break }
+            AnalysisGate.shared.wait(job)
+            guard let pb = CMSampleBufferGetImageBuffer(sb) else { continue }
+            let pts = CMSampleBufferGetPresentationTimeStamp(sb).seconds
+            guard pts.isFinite else { continue }
+            lastPTS = pts
+            if pts >= Double(nextSample) * step - 0.001 {
+                let index = nextSample
+                nextSample = max(nextSample + 1, Int((pts / step).rounded(.down)) + 1)
+                if let ranges, !ranges.contains(where: { pts >= $0.0 && pts <= $0.1 }) { continue }
+                slots.wait(); group.enter()
+                queue.async {
+                    autoreleasepool { box.set(index, Frame(t: Float(pts), faces: faces(in: pb, orient: orient))) }
+                    slots.signal(); group.leave()
+                }
+            }
+            state.update { $0.images = min(pts / max(duration, 0.1), 1); $0.imagesTime = pts; $0.paused = AnalysisGate.shared.paused }
+        }
+        group.wait()
+        if job.cancelled { return nil }
+        if reader.status == .failed, lastPTS < duration * 0.5 { return nil }
+        state.update(force: true) { $0.images = 1; $0.imagesTime = duration }
+        return box.all()
+    }
+}

@@ -106,6 +106,7 @@ enum VoiceAnalyzer {
             v.emb += q.q; v.embScale.append(q.scale)
         }
         v.group = VoiceClustering.cluster(v)
+        v.group = VoiceProfiles.refine(v)
         v.nextGroup = (v.group.max() ?? -1) + 1
         if let faces = FaceStore.load(info) { v.link = VoiceLinking.link(v, faces: faces) }
         v.seconds = Date().timeIntervalSince(t0)

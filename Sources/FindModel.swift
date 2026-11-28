@@ -359,7 +359,7 @@ final class FindModel: ObservableObject {
     /// Les protagonistes comme plages de temps (visage à l'écran, voix qui parle), pour attribuer les répliques (`Speakers`).
     func speakerCandidates() -> [SpeakerCandidate] {
         protagonists.map { p in
-            SpeakerCandidate(id: p.id, voice: p.voice.flatMap { voices?.intervals(of: $0) } ?? [], face: p.person.flatMap { faces?.intervals(of: $0) } ?? [])
+            SpeakerCandidate(id: p.id, voiceID: p.voice, voice: p.voice.flatMap { voices?.intervals(of: $0) } ?? [], face: p.person.flatMap { faces?.intervals(of: $0) } ?? [])
         }
     }
 

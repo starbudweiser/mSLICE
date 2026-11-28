@@ -52,7 +52,7 @@ final class DialogueModel: ObservableObject {
         Task { [weak self] in await self?.refreshAssets() }
         playSink = AppModel.shared.player.$time.sink { [weak self] t in self?.follow(t) }
         if data?.kind == .transcript, data?.aligned != true { Task { [weak self] in await self?.alignTimings() } }              // anciennes transcriptions : recalées à l'ouverture
-        findSink = doc.find.objectWillChange.sink { [weak self] _ in self?.colorOrder = nil; DispatchQueue.main.async { self?.objectWillChange.send() } }      // un protagoniste renommé change les noms affichés
+        findSink = doc.find.objectWillChange.sink { [weak self] _ in self?.colorOrder = nil; DispatchQueue.main.async { self?.objectWillChange.send(); self?.autoVote() } }      // un protagoniste renommé change les noms affichés
     }
 
     // MARK: Personnages
@@ -85,6 +85,29 @@ final class DialogueModel: ObservableObject {
     /// Attribue les répliques d'après les protagonistes reconnus (visages + voix) ; les noms des sous-titres et les choix manuels ne bougent pas.
     func attribute() {
         mutate { Speakers.apply(&$0, candidates: doc.find.speakerCandidates()) }
+        refineSpeakers()
+    }
+
+    /// Affine l'attribution avec le vote de chaque réplique : empreintes de voix calculées à l'intérieur de la réplique, classées sur les profils des voix (`LineVoices`).
+    /// Tourne en arrière-plan ; les noms des sous-titres et les choix manuels ne bougent pas.
+    func refineSpeakers() {
+        guard !voting else { return }
+        voting = true
+        Task { [weak self] in
+            defer { self?.voting = false }
+            guard let self, let v = self.doc.find.voices, let lines = self.data?.lines else { return }
+            let todo = lines.filter { !$0.discarded && $0.manual != true && $0.who == nil }
+            let votes = await LineVoices.votes(todo, info: self.doc.info, voices: v)
+            guard !votes.isEmpty, self.data != nil else { return }
+            self.mutate { Speakers.apply(&$0, candidates: self.doc.find.speakerCandidates(), votes: votes); $0.voted = true }
+        }
+    }
+    private var voting = false, triedVote = false
+    /// Les répliques déjà là (ouverture d'un fichier analysé avant cette amélioration) sont affinées une fois, dès que les voix sont connues.
+    private func autoVote() {
+        guard let d = data, d.voted != true, !voting, !triedVote, doc.find.voices != nil, !doc.find.protagonists.isEmpty else { return }
+        triedVote = true
+        refineSpeakers()
     }
 
     func setSpeaker(_ id: UUID, protagonist: String?) { mutate { $0.setSpeaker(id, speaker: protagonist, name: nil) } }
@@ -358,7 +381,8 @@ final class DialogueModel: ObservableObject {
         Speakers.apply(&s, candidates: doc.find.speakerCandidates())
         data = s; selected = nil; editing = nil; query = ""; filter = nil; phase = .list
         DialogueStore.save(s, for: doc.info)
-        if kind == .transcript { Task { [weak self] in await self?.alignTimings() } }
+        if kind == .transcript { Task { [weak self] in await self?.alignTimings(); self?.refineSpeakers() } }
+        else { refineSpeakers() }
     }
 
     /// Recale les débuts et les fins sur la parole réelle (niveau sonore du fichier) : ce qu'on entend à la position d'une réplique est bien cette réplique.

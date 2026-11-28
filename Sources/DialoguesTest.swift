@@ -128,6 +128,10 @@ enum DialoguesTest {
         let nancy = SpeakerCandidate(id: "v2", voice: [(20, 30)], face: [])
         let cast = [dustin, steve, nancy]
         check(Speakers.assign(start: 1, end: 4, candidates: cast) == "p0" && Speakers.assign(start: 11, end: 15, candidates: cast) == "p1" && Speakers.assign(start: 21, end: 25, candidates: cast) == "v2", "qui parle : la voix qui parle pendant la réplique (visage + voix liés, voix sans visage)")
+        let voted = [SpeakerCandidate(id: "p0", voiceID: 0, voice: [(0, 10)], face: []), SpeakerCandidate(id: "v1", voiceID: 1, voice: [(10, 20)], face: [])]
+        check(Speakers.assign(start: 1, end: 4, candidates: voted, vote: LineVote(voice: 1, sim: 0.5, margin: 0.3)) == "v1", "qui parle : un vote net de la réplique passe avant les fenêtres de la grille")
+        check(Speakers.assign(start: 1, end: 4, candidates: voted, vote: LineVote(voice: 1, sim: 0.12, margin: 0.03)) == "p0", "qui parle : un vote hésitant est ignoré (retour aux fenêtres)")
+        check(Speakers.assign(start: 1, end: 4, candidates: voted, vote: LineVote(voice: 7, sim: 0.6, margin: 0.4)) == "p0", "qui parle : un vote pour une voix écartée (sans protagoniste) est ignoré")
         check(Speakers.assign(start: 9, end: 11, candidates: cast) == nil, "qui parle : deux voix à parts égales → pas de choix (« Qui ? »)")
         check(Speakers.assign(start: 45, end: 48, candidates: cast) == nil, "qui parle : personne ne parle ni n'est à l'écran → nil")
         let silentFace = [SpeakerCandidate(id: "p0", voice: [(0, 5)], face: [(0, 20)]), SpeakerCandidate(id: "p1", voice: [], face: [(10, 20)])]

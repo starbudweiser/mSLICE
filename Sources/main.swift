@@ -111,6 +111,31 @@ if let i = CommandLine.arguments.firstIndex(of: "--voice-dump"), CommandLine.arg
     dispatchMain()
 }
 
+// `mSLICE --embed-ranges <audio> <plages.json> <sortie.json> [pas]` : empreintes de voix à l'intérieur de segments donnés ([[début, fin], …]) ; banc d'essai des voix.
+if let i = CommandLine.arguments.firstIndex(of: "--embed-ranges"), CommandLine.arguments.indices.contains(i + 3) {
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1]), ranges = URL(fileURLWithPath: CommandLine.arguments[i + 2]), out = URL(fileURLWithPath: CommandLine.arguments[i + 3])
+    let hop = CommandLine.arguments.indices.contains(i + 4) ? Double(CommandLine.arguments[i + 4]) ?? 0.5 : 0.5
+    guard let embedder = VoiceEmbedder(), let x = AudioSamples.load(url: url), let d = try? Data(contentsOf: ranges), let r = try? JSONSerialization.jsonObject(with: d) as? [[Double]] else { print("ÉCHEC"); exit(1) }
+    var res: [[[String: Any]]] = []
+    for s in r where s.count == 2 { res.append(SegmentEmbedding.embed(x, start: s[0], end: s[1], hop: hop, embedder: embedder).map { ["t": $0.t, "v": $0.v.map { Double($0) }] }) }
+    try? JSONSerialization.data(withJSONObject: res).write(to: out)
+    print("OK : \(res.count) segments, \(res.reduce(0) { $0 + $1.count }) empreintes"); exit(0)
+}
+
+// `mSLICE --line-votes <index.msvoices> <audio> <plages.json> <sortie.json>` : vote de voix de chaque réplique (profils tirés de l'index donné) ; banc d'essai des voix.
+if let i = CommandLine.arguments.firstIndex(of: "--line-votes"), CommandLine.arguments.indices.contains(i + 4) {
+    let a = CommandLine.arguments
+    guard let d = try? Data(contentsOf: URL(fileURLWithPath: a[i + 1])), let v = VoiceIndex(serialized: d), let profiles = VoiceProfiles.build(v), let embedder = VoiceEmbedder(),
+          let rd = try? Data(contentsOf: URL(fileURLWithPath: a[i + 3])), let r = try? JSONSerialization.jsonObject(with: rd) as? [[Double]],
+          let found = SegmentEmbedding.embedRanges(url: URL(fileURLWithPath: a[i + 2]), ranges: r.map { (start: $0[0], end: $0[1]) }, embedder: embedder) else { print("ÉCHEC"); exit(1) }
+    let rows: [[String: Any]] = found.map { e in
+        guard let c = profiles.classify(e.map(\.v)) else { return ["voice": -1] }
+        return ["voice": Int(c.voice), "sim": Double(c.sim), "margin": Double(c.margin), "confident": c.confident]
+    }
+    try? JSONSerialization.data(withJSONObject: rows).write(to: URL(fileURLWithPath: a[i + 4]))
+    print("OK : \(rows.count) répliques, \(profiles.ids.count) voix"); exit(0)
+}
+
 // `mSLICE --voice-moments <fichier> <sortie.json>` : voix reconnues et leurs moments (nouveau calcul précis, avec le niveau sonore) ; banc d'essai des voix.
 if let i = CommandLine.arguments.firstIndex(of: "--voice-moments"), CommandLine.arguments.indices.contains(i + 2) {
     let url = URL(fileURLWithPath: CommandLine.arguments[i + 1]), out = URL(fileURLWithPath: CommandLine.arguments[i + 2])
