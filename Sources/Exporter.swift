@@ -257,7 +257,8 @@ enum Planner {
         let list = FileManager.default.temporaryDirectory.appendingPathComponent("mslice-\(UUID().uuidString).ffconcat")
         let text = "ffconcat version 1.0\n" + parts.map { "file '\($0.path.replacingOccurrences(of: "'", with: "'\\''"))'\n" }.joined()
         try? text.write(to: list, atomically: true, encoding: .utf8)
-        cmds.append(Cmd(args: common + ["-f", "concat", "-safe", "0", "-i", list.path, "-map", "0", "-c", "copy", item.url.path], out: item.url, expected: 0, temps: parts + [list]))
+        cmds.append(Cmd(args: common + ["-f", "concat", "-safe", "0", "-i", list.path, "-map", "0:v?", "-map", "0:a?", "-c", "copy", item.url.path], out: item.url, expected: 0, temps: parts + [list]))
+        // Image et son seulement : les chapitres de l'original arrivent dans chaque morceau sous forme de piste de texte, que le M4A refuse (« Could not write header »).
         return cmds
     }
 
